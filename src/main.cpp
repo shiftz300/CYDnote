@@ -2,6 +2,8 @@
 
 #include <Arduino.h>
 #include <SPI.h>
+#include <FS.h>
+#include <SPIFFS.h>
 
 // include the installed LVGL- Light and Versatile Graphics Library - https://github.com/lvgl/lvgl
 #include <lvgl.h>
@@ -12,6 +14,101 @@
 // include the installed the "XPT2046_Touchscreen" library by Paul Stoffregen to use the Touchscreen - https://github.com/PaulStoffregen/XPT2046_Touchscreen
 #include <XPT2046_Touchscreen.h>
 
+#include "config.h"
+#include "app_manager.h"
+
+// LVGL File System Driver for SPIFFS
+static lv_fs_drv_t fs_drv;
+
+// SPIFFS file system callbacks
+static void * lv_spiffs_open(lv_fs_drv_t * drv, const char * path, lv_fs_mode_t mode) {
+    const char * mode_str = (mode == LV_FS_MODE_WR) ? "w" : "r";
+    File * f = new File(SPIFFS.open(path, mode_str));
+    if (!f->operator bool()) {
+        delete f;
+        return NULL;
+    }
+    return (void *)f;
+}
+
+static lv_fs_res_t lv_spiffs_close(lv_fs_drv_t * drv, void * file_p) {
+    File * f = (File *)file_p;
+    if (f) {
+        f->close();
+        delete f;
+    }
+    return LV_FS_RES_OK;
+}
+
+static lv_fs_res_t lv_spiffs_read(lv_fs_drv_t * drv, void * file_p, void * buf, uint32_t btr, uint32_t * br) {
+    File * f = (File *)file_p;
+    if (!f) return LV_FS_RES_INV_PARAM;
+    *br = f->read((uint8_t *)buf, btr);
+    return LV_FS_RES_OK;
+}
+
+static lv_fs_res_t lv_spiffs_write(lv_fs_drv_t * drv, void * file_p, const void * buf, uint32_t btw, uint32_t * bw) {
+    File * f = (File *)file_p;
+    if (!f) return LV_FS_RES_INV_PARAM;
+    *bw = f->write((const uint8_t *)buf, btw);
+    return LV_FS_RES_OK;
+}
+
+static lv_fs_res_t lv_spiffs_seek(lv_fs_drv_t * drv, void * file_p, uint32_t pos, lv_fs_whence_t whence) {
+    File * f = (File *)file_p;
+    if (!f) return LV_FS_RES_INV_PARAM;
+    fs::SeekMode mode = (whence == LV_FS_SEEK_SET) ? fs::SeekSet : (whence == LV_FS_SEEK_CUR) ? fs::SeekCur : fs::SeekEnd;
+    f->seek(pos, mode);
+    return LV_FS_RES_OK;
+}
+
+static lv_fs_res_t lv_spiffs_tell(lv_fs_drv_t * drv, void * file_p, uint32_t * pos_res) {
+    File * f = (File *)file_p;
+    if (!f) return LV_FS_RES_INV_PARAM;
+    *pos_res = f->position();
+    return LV_FS_RES_OK;
+}
+
+static void * lv_spiffs_dir_open(lv_fs_drv_t * drv, const char * path) {
+    File * f = new File(SPIFFS.open(path, "r"));
+    if (!f->operator bool()) {
+        delete f;
+        return NULL;
+    }
+    return (void *)f;
+}
+
+static lv_fs_res_t lv_spiffs_dir_read(lv_fs_drv_t * drv, void * rddir_p, char * fn, uint32_t fn_len) {
+    File * dir = (File *)rddir_p;
+    if (!dir) return LV_FS_RES_INV_PARAM;
+    
+    File file = dir->openNextFile();
+    if (!file) {
+        fn[0] = '\0';
+        return LV_FS_RES_OK;
+    }
+    
+    // Add '/' prefix for directories
+    if (file.isDirectory()) {
+        snprintf(fn, fn_len, "/%s", file.name());
+    } else {
+        snprintf(fn, fn_len, "%s", file.name());
+    }
+    file.close();
+    return LV_FS_RES_OK;
+}
+
+static lv_fs_res_t lv_spiffs_dir_close(lv_fs_drv_t * drv, void * rddir_p) {
+    File * dir = (File *)rddir_p;
+    if (dir) {
+        dir->close();
+        delete dir;
+    }
+    return LV_FS_RES_OK;
+}
+
+// Application manager instance
+AppManager* app = nullptr;
 
 // Create a instance of the TFT_eSPI class
 TFT_eSPI tft = TFT_eSPI();
@@ -208,20 +305,24 @@ void setup() {
   
   // Start LVGL
   lv_init();
-
+  Serial.println("[INIT] LVGL ready");
+  
   // Start the SPI for the touchscreen and init the touchscreen
+  Serial.println("[INIT] Initializing touchscreen...");
   touchscreenSPI.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
   touchscreen.begin(touchscreenSPI);
-  // Set the Touchscreen rotation in landscape mode
-  // Note: in some displays, the touchscreen might be upside down, so you might need to set the rotation to 0: touchscreen.setRotation(0);
-  touchscreen.setRotation(2);
+  Serial.println("[INIT] Touchscreen began");
+  
+  // Set the Touchscreen rotation in portrait mode
+  touchscreen.setRotation(0);
+  Serial.println("[INIT] Touchscreen rotation set");
 
   // Create a display object
   lv_display_t *disp;
 
   // Initialize the TFT display using the TFT_eSPI library
   disp = lv_tft_espi_create(SCREEN_WIDTH, SCREEN_HEIGHT, draw_buf, sizeof(draw_buf));
-  lv_display_set_rotation(disp, LV_DISPLAY_ROTATION_270);
+  lv_display_set_rotation(disp, LV_DISPLAY_ROTATION_0);
     
   // Initialize an LVGL input device object (Touchscreen)
   lv_indev_t *indev = lv_indev_create();
@@ -230,12 +331,61 @@ void setup() {
   // Set the callback function to read Touchscreen input
   lv_indev_set_read_cb(indev, touchscreen_read);
 
-  // Function to draw the GUI (text, buttons and sliders)
-  lv_create_main_gui();
+  // Initialize SPIFFS for file system
+  delay(100);  // Give SPI time to settle
+  if (!SPIFFS.begin(true)) {  // true = format if mount fails
+    Serial.println("[ERROR] SPIFFS mount failed!");
+  } else {
+    Serial.println("[SPIFFS] Mounted successfully");
+    
+    // Create docs directory if it doesn't exist
+    if (!SPIFFS.exists("/docs")) {
+      SPIFFS.mkdir("/docs");
+      Serial.println("[SPIFFS] Created /docs directory");
+    }
+    
+    // Create default readme.txt if it doesn't exist
+    if (!SPIFFS.exists("/readme.txt")) {
+      File f = SPIFFS.open("/readme.txt", "w");
+      f.println("CYDnote - Note Taking Application");
+      f.println("================================");
+      f.println("");
+      f.println("Welcome to CYDnote!");
+      f.println("Use this application to create and edit text notes on your ESP32 device.");
+      f.close();
+      Serial.println("[SPIFFS] Created /readme.txt");
+    }
+    
+    // Register LVGL file system driver for SPIFFS
+    lv_fs_drv_init(&fs_drv);
+    fs_drv.letter = 'S';
+    fs_drv.open_cb = lv_spiffs_open;
+    fs_drv.close_cb = lv_spiffs_close;
+    fs_drv.read_cb = lv_spiffs_read;
+    fs_drv.write_cb = lv_spiffs_write;
+    fs_drv.seek_cb = lv_spiffs_seek;
+    fs_drv.tell_cb = lv_spiffs_tell;
+    fs_drv.dir_open_cb = lv_spiffs_dir_open;
+    fs_drv.dir_read_cb = lv_spiffs_dir_read;
+    fs_drv.dir_close_cb = lv_spiffs_dir_close;
+    fs_drv.user_data = NULL;
+    lv_fs_drv_register(&fs_drv);
+    Serial.println("[SPIFFS] LVGL driver registered (letter 'S')");
+  }
+
+  // Initialize application manager instead of demo GUI
+  Serial.println("Starting AppManager init...");
+  app = AppManager::getInstance();
+  Serial.println("AppManager instance created, calling init()...");
+  app->init();
+  Serial.println("AppManager init complete");
+  
+  Serial.println("CYDnote initialized");
 }
 
 void loop() {
   lv_task_handler();  // let the GUI do its work
   lv_tick_inc(5);     // tell LVGL how much time has passed
+  if (app) app->update();  // update app state and handle menu actions
   delay(5);           // let this time pass
 }

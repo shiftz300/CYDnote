@@ -738,7 +738,7 @@
 #endif
 
 /*API for open, read, etc*/
-#define LV_USE_FS_POSIX 0
+#define LV_USE_FS_POSIX 1
 #if LV_USE_FS_POSIX
     #define LV_FS_POSIX_LETTER '\0'     /*Set an upper cased letter on which the drive will accessible (e.g. 'A')*/
     #define LV_FS_POSIX_PATH ""         /*Set the working directory. File/directory paths will be appended to it.*/
@@ -943,7 +943,7 @@
 
 /*1: Enable Pinyin input method*/
 /*Requires: lv_keyboard*/
-#define LV_USE_IME_PINYIN 0
+#define LV_USE_IME_PINYIN 1
 #if LV_USE_IME_PINYIN
     /*1: Use default thesaurus*/
     /*If you do not use the default thesaurus, be sure to use `lv_ime_pinyin` after setting the thesaurus*/
@@ -961,7 +961,7 @@
 
 /*1: Enable file explorer*/
 /*Requires: lv_table*/
-#define LV_USE_FILE_EXPLORER                     0
+#define LV_USE_FILE_EXPLORER                     1
 #if LV_USE_FILE_EXPLORER
     /*Maximum length of path*/
     #define LV_FILE_EXPLORER_PATH_MAX_LEN        (128)
