@@ -72,7 +72,7 @@
  *====================*/
 
 /*Default display refresh, input device read and animation step period.*/
-#define LV_DEF_REFR_PERIOD  33      /*[ms]*/
+#define LV_DEF_REFR_PERIOD  16      /*[ms]*/
 
 /*Default Dot Per Inch. Used to initialize default sizes such as widgets sized, style paddings.
  *(Not so important, you can adjust it to modify default sizes and spaces)*/
@@ -496,7 +496,7 @@
 /*Montserrat fonts with ASCII range and some symbols using bpp = 4
  *https://fonts.google.com/specimen/Montserrat*/
 #define LV_FONT_MONTSERRAT_8  0
-#define LV_FONT_MONTSERRAT_10 0
+#define LV_FONT_MONTSERRAT_10 1
 #define LV_FONT_MONTSERRAT_12 0
 #define LV_FONT_MONTSERRAT_14 1
 #define LV_FONT_MONTSERRAT_16 0
@@ -520,8 +520,10 @@
 /*Demonstrate special features*/
 #define LV_FONT_MONTSERRAT_28_COMPRESSED 0  /*bpp = 3*/
 #define LV_FONT_DEJAVU_16_PERSIAN_HEBREW 0  /*Hebrew, Arabic, Persian letters and all their forms*/
-#define LV_FONT_SIMSUN_14_CJK            0  /*1000 most common CJK radicals*/
-#define LV_FONT_SIMSUN_16_CJK            0  /*1000 most common CJK radicals*/
+#define LV_FONT_SIMSUN_14_CJK            1  /*1000 most common CJK radicals*/
+#define LV_FONT_SIMSUN_16_CJK            1  /*1000 most common CJK radicals*/
+#define LV_FONT_SOURCE_HAN_SANS_SC_14_CJK 1 /*1338 most common CJK radicals*/
+#define LV_FONT_SOURCE_HAN_SANS_SC_16_CJK 0 /*1338 most common CJK radicals*/
 
 /*Pixel perfect monospace fonts*/
 #define LV_FONT_UNSCII_8  0
@@ -538,7 +540,7 @@
 /*Enable handling large font and/or fonts with a lot of characters.
  *The limit depends on the font size, font face and bpp.
  *Compiler error will be triggered if a font needs it.*/
-#define LV_FONT_FMT_TXT_LARGE 0
+#define LV_FONT_FMT_TXT_LARGE 1
 
 /*Enables/disables support for compressed fonts.*/
 #define LV_USE_FONT_COMPRESSED 0
@@ -727,7 +729,7 @@
 /*File system interfaces for common APIs */
 
 /*Setting a default driver letter allows skipping the driver prefix in filepaths*/
-#define LV_FS_DEFAULT_DRIVE_LETTER '\0'
+#define LV_FS_DEFAULT_DRIVER_LETTER '\0'
 
 /*API for fopen, fread, etc*/
 #define LV_USE_FS_STDIO 0
@@ -738,7 +740,7 @@
 #endif
 
 /*API for open, read, etc*/
-#define LV_USE_FS_POSIX 1
+#define LV_USE_FS_POSIX 0
 #if LV_USE_FS_POSIX
     #define LV_FS_POSIX_LETTER '\0'     /*Set an upper cased letter on which the drive will accessible (e.g. 'A')*/
     #define LV_FS_POSIX_PATH ""         /*Set the working directory. File/directory paths will be appended to it.*/
@@ -773,9 +775,9 @@
 #endif
 
 /*API for Arduino LittleFs. */
-#define LV_USE_FS_ARDUINO_ESP_LITTLEFS 0
+#define LV_USE_FS_ARDUINO_ESP_LITTLEFS 1
 #if LV_USE_FS_ARDUINO_ESP_LITTLEFS
-    #define LV_FS_ARDUINO_ESP_LITTLEFS_LETTER '\0'     /*Set an upper cased letter on which the drive will accessible (e.g. 'A')*/
+    #define LV_FS_ARDUINO_ESP_LITTLEFS_LETTER 'L'     /*Set an upper cased letter on which the drive will accessible (e.g. 'A')*/
 #endif
 
 /*API for Arduino Sd. */
@@ -947,21 +949,21 @@
 #if LV_USE_IME_PINYIN
     /*1: Use default thesaurus*/
     /*If you do not use the default thesaurus, be sure to use `lv_ime_pinyin` after setting the thesaurus*/
-    #define LV_IME_PINYIN_USE_DEFAULT_DICT 1
+    #define LV_IME_PINYIN_USE_DEFAULT_DICT 0
     /*Set the maximum number of candidate panels that can be displayed*/
     /*This needs to be adjusted according to the size of the screen*/
-    #define LV_IME_PINYIN_CAND_TEXT_NUM 6
+    #define LV_IME_PINYIN_CAND_TEXT_NUM 8
 
     /*Use 9 key input(k9)*/
     #define LV_IME_PINYIN_USE_K9_MODE      1
     #if LV_IME_PINYIN_USE_K9_MODE == 1
-        #define LV_IME_PINYIN_K9_CAND_TEXT_NUM 3
+        #define LV_IME_PINYIN_K9_CAND_TEXT_NUM 4
     #endif /*LV_IME_PINYIN_USE_K9_MODE*/
 #endif
 
 /*1: Enable file explorer*/
 /*Requires: lv_table*/
-#define LV_USE_FILE_EXPLORER                     1
+#define LV_USE_FILE_EXPLORER                     0
 #if LV_USE_FILE_EXPLORER
     /*Maximum length of path*/
     #define LV_FILE_EXPLORER_PATH_MAX_LEN        (128)
@@ -975,7 +977,11 @@
  *==================*/
 
 /*Use SDL to open window on PC and handle mouse and keyboard*/
+#ifdef LV_SIMULATOR
+#define LV_USE_SDL              1
+#else
 #define LV_USE_SDL              0
+#endif
 #if LV_USE_SDL
     #define LV_SDL_INCLUDE_PATH     <SDL2/SDL.h>
     #define LV_SDL_RENDER_MODE      LV_DISPLAY_RENDER_MODE_DIRECT   /*LV_DISPLAY_RENDER_MODE_DIRECT is recommended for best performance*/

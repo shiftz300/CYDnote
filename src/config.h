@@ -9,7 +9,6 @@
 #define ORIENTATION LV_DISPLAY_ROTATION_0
 
 // Touchscreen Configuration
-#define XPT2046_IRQ 36   // T_IRQ
 #define XPT2046_MOSI 32  // T_DIN
 #define XPT2046_MISO 39  // T_OUT
 #define XPT2046_CLK 25   // T_CLK
@@ -17,7 +16,11 @@
 
 // SD Card Configuration
 #define SD_CS 5
-#define SD_SPI_SPEED 40000000
+#define SD_SPI_SPEED 25000000
+#define SD_ALLOW_FALLBACK_SPEEDS 0
+#define SD_SCK 14
+#define SD_MISO 12
+#define SD_MOSI 13
 
 // Application Modes
 enum AppMode {

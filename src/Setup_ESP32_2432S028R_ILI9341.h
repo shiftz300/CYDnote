@@ -169,7 +169,8 @@
 // ###### EDIT THE PIN NUMBERS IN THE LINES FOLLOWING TO SUIT YOUR ESP8266 SETUP ######
 
 // For NodeMCU - use pin numbers in the form PIN_Dx where Dx is the NodeMCU pin designation
-#define TFT_MISO  12  // Automatically assigned with ESP8266 if not defined
+// Keep TFT in write-only mode on CYD to avoid MISO contention with other SPI devices.
+// #define TFT_MISO  12
 #define TFT_MOSI  13  // Automatically assigned with ESP8266 if not defined
 #define TFT_SCLK  14  // Automatically assigned with ESP8266 if not defined
 
@@ -181,7 +182,8 @@
 
 //#define TFT_BL PIN_D1  // LED back-light (only for ST7789 with backlight control pin)
 
-#define TOUCH_CS 33     // Chip select pin (T_CS) of touch screen
+// Touch is handled by XPT2046_Touchscreen (separate pins/bus), disable TFT_eSPI touch CS.
+#define TOUCH_CS -1
 
 //#define TFT_WR PIN_D2       // Write strobe for modified Raspberry Pi TFT only
 
@@ -364,7 +366,7 @@
 // #define SPI_FREQUENCY  20000000
 // #define SPI_FREQUENCY  27000000
 // #define SPI_FREQUENCY  40000000
-#define SPI_FREQUENCY  55000000 // STM32 SPI1 only (SPI2 maximum is 27MHz)
+#define SPI_FREQUENCY  55000000
 // #define SPI_FREQUENCY  80000000
 
 // Optional reduced SPI frequency for reading TFT
@@ -377,6 +379,9 @@
 // If the VSPI port is in use and pins are not accessible (e.g. TTGO T-Beam)
 // then uncomment the following line:
 #define USE_HSPI_PORT
+
+// Enable TFT_eSPI DMA path on classic ESP32 to improve flush throughput.
+#define ESP32_DMA
 
 // Comment out the following #define if "SPI Transactions" do not need to be
 // supported. When commented out the code size will be smaller and sketches will
