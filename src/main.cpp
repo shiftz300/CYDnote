@@ -55,6 +55,96 @@ static const int TOUCH_DEADZONE_PX = 3;
 // DMA-capable LVGL draw buffers (allocated at runtime)
 static uint8_t* draw_buf_1 = nullptr;
 static uint8_t* draw_buf_2 = nullptr;
+static bool fs_mount_ok = false;
+
+enum StatusLedState {
+  LED_BOOTING = 0,
+  LED_READY,
+  LED_BUSY,
+  LED_ERROR
+};
+
+static StatusLedState led_state = LED_BOOTING;
+
+static inline void statusLedWriteMono(bool on) {
+#if STATUS_LED_PIN >= 0
+  digitalWrite(STATUS_LED_PIN, on ? STATUS_LED_ON_LEVEL : (STATUS_LED_ON_LEVEL == HIGH ? LOW : HIGH));
+#else
+  (void)on;
+#endif
+}
+
+static inline void statusLedWriteRgb(bool r, bool g, bool b) {
+#if RGB_LED_R >= 0
+  digitalWrite(RGB_LED_R, r ? RGB_LED_ON_LEVEL : (RGB_LED_ON_LEVEL == HIGH ? LOW : HIGH));
+#endif
+#if RGB_LED_G >= 0
+  digitalWrite(RGB_LED_G, g ? RGB_LED_ON_LEVEL : (RGB_LED_ON_LEVEL == HIGH ? LOW : HIGH));
+#endif
+#if RGB_LED_B >= 0
+  digitalWrite(RGB_LED_B, b ? RGB_LED_ON_LEVEL : (RGB_LED_ON_LEVEL == HIGH ? LOW : HIGH));
+#endif
+}
+
+static void statusLedInit() {
+#if STATUS_LED_PIN >= 0
+  pinMode(STATUS_LED_PIN, OUTPUT);
+  statusLedWriteMono(false);
+#endif
+#if RGB_LED_R >= 0
+  pinMode(RGB_LED_R, OUTPUT);
+#endif
+#if RGB_LED_G >= 0
+  pinMode(RGB_LED_G, OUTPUT);
+#endif
+#if RGB_LED_B >= 0
+  pinMode(RGB_LED_B, OUTPUT);
+#endif
+#if (RGB_LED_R >= 0) || (RGB_LED_G >= 0) || (RGB_LED_B >= 0)
+  statusLedWriteRgb(false, false, false);
+#endif
+}
+
+static void statusLedSetState(StatusLedState s) {
+  led_state = s;
+}
+
+static void statusLedUpdate() {
+  uint32_t t = millis();
+#if (RGB_LED_R >= 0) || (RGB_LED_G >= 0) || (RGB_LED_B >= 0)
+  // RGB LED mapping:
+  // booting: yellow blink, ready: green, busy: cyan blink, error: red fast blink
+  switch (led_state) {
+    case LED_BOOTING:
+      statusLedWriteRgb(((t / 150) % 2) == 0, ((t / 150) % 2) == 0, false);
+      break;
+    case LED_READY:
+      statusLedWriteRgb(false, true, false);
+      break;
+    case LED_BUSY:
+      statusLedWriteRgb(false, ((t / 300) % 2) == 0, ((t / 300) % 2) == 0);
+      break;
+    case LED_ERROR:
+      statusLedWriteRgb(((t / 80) % 2) == 0, false, false);
+      break;
+  }
+#elif STATUS_LED_PIN >= 0
+  switch (led_state) {
+    case LED_BOOTING:
+      statusLedWriteMono(((t / 150) % 2) == 0);
+      break;
+    case LED_READY:
+      statusLedWriteMono(true);
+      break;
+    case LED_BUSY:
+      statusLedWriteMono(((t / 300) % 2) == 0);
+      break;
+    case LED_ERROR:
+      statusLedWriteMono(((t / 80) % 2) == 0);
+      break;
+  }
+#endif
+}
 
 static void tft_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_map) {
   uint32_t w = (uint32_t)(area->x2 - area->x1 + 1);
@@ -122,8 +212,10 @@ void setup() {
   // Start LVGL
   lv_init();
 
-  pinMode(21, OUTPUT);
-  digitalWrite(21, HIGH);
+  pinMode(TFT_BACKLIGHT_PIN, OUTPUT);
+  digitalWrite(TFT_BACKLIGHT_PIN, TFT_BACKLIGHT_ON_LEVEL);
+  statusLedInit();
+  statusLedSetState(LED_BOOTING);
   
   // Allocate LVGL draw buffer(s) from DMA-capable internal RAM.
   draw_buf_1 = (uint8_t*)heap_caps_malloc(DRAW_BUF_SIZE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
@@ -163,17 +255,21 @@ void setup() {
   if (!esp_littlefs_mounted("spiffs")) {
     if (!LittleFS.begin(true)) {  // true = format if mount fails
       Serial.println("[ERROR] LittleFS mount failed!");
+      fs_mount_ok = false;
     } else {
       Serial.println("[LittleFS] mounted");
+      fs_mount_ok = true;
     }
   } else {
     Serial.println("[LittleFS] already mounted");
+    fs_mount_ok = true;
   }
   FontManager::init();
 
   // Initialize application manager instead of demo GUI
   app = AppManager::getInstance();
   app->init();
+  statusLedSetState(fs_mount_ok ? LED_READY : LED_ERROR);
   
   Serial.println("CYDnote initialized");
 }
@@ -187,6 +283,10 @@ void loop() {
 
   lv_timer_handler();  // let the GUI do its work
   if (app) app->update();  // update app state and handle menu actions
+  if (!fs_mount_ok) statusLedSetState(LED_ERROR);
+  else if (app && app->isBusy()) statusLedSetState(LED_BUSY);
+  else statusLedSetState(LED_READY);
+  statusLedUpdate();
   delay(0);              // keep yielding without adding an extra 1ms frame stall
 }
 

@@ -160,6 +160,10 @@ public:
         return current_mode;
     }
 
+    bool isBusy() const {
+        return file_manager.isCopyInProgress();
+    }
+
 private:
     bool readVirtualFile(const String& vpath, String& out) {
         char drive = driveOf(vpath);
@@ -212,13 +216,23 @@ private:
     }
 
     String innerPathOf(const String& vpath) const {
+        char d = driveOf(vpath);
         if (vpath.length() >= 2 && vpath.charAt(1) == ':') {
             String p = vpath.substring(2);
             if (!p.startsWith("/")) p = "/" + p;
+            if (d == 'L') {
+                if (p == "/littlefs") return "/";
+                if (p.startsWith("/littlefs/")) p = p.substring(9);
+            } else if (d == 'D') {
+                if (p == "/sd") return "/";
+                if (p.startsWith("/sd/")) p = p.substring(3);
+            }
             return p;
         }
         String p = vpath;
         if (!p.startsWith("/")) p = "/" + p;
+        if (p == "/littlefs") return "/";
+        if (p.startsWith("/littlefs/")) p = p.substring(9);
         return p;
     }
 

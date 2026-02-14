@@ -19,6 +19,8 @@ private:
     static constexpr int32_t IME_CANDIDATE_H = 64;
     static constexpr int32_t IME_KEYBOARD_H = 132;
     static constexpr int32_t IME_TOTAL_H_FALLBACK = IME_CANDIDATE_H + IME_KEYBOARD_H;
+    static constexpr size_t COPY_IO_CHUNK = 24576;
+    static constexpr uint8_t COPY_CHUNKS_PER_TICK = 12;
     enum DialogMode {
         DIALOG_NONE,
         DIALOG_NEW_ENTRY,
@@ -52,6 +54,23 @@ private:
     lv_obj_t* menu_panel;
     lv_obj_t* menu_copy_btn;
     lv_obj_t* menu_paste_btn;
+    lv_obj_t* menu_paste_label;
+    lv_obj_t* menu_paste_progress_track;
+    lv_obj_t* menu_paste_progress_bg;
+    lv_obj_t* menu_copy_cancel_btn;
+    lv_obj_t* menu_copy_cancel_label;
+    lv_timer_t* copy_timer;
+    char copy_src_drive;
+    char copy_dst_drive;
+    String copy_src_inner;
+    String copy_dst_inner;
+    size_t copy_total_bytes;
+    size_t copy_done_bytes;
+    File copy_src_lfs;
+    File copy_dst_lfs;
+    FsFile copy_src_sdfs;
+    FsFile copy_dst_sdfs;
+    uint8_t copy_buf[COPY_IO_CHUNK];
     lv_obj_t* dialog_box;
     lv_obj_t* dialog_input;
     lv_obj_t* dialog_ime_container;
@@ -71,6 +90,9 @@ private:
     String copied_vpath;
     String pending_open_vpath;
     bool new_as_dir;
+    bool copy_cancel_requested;
+    bool copy_in_progress;
+    uint32_t copy_started_ms;
     DialogMode dialog_mode;
     uint32_t fs_usage_last_ms;
     int fs_usage_last_pct;
@@ -80,12 +102,12 @@ private:
 public:
     FileManager()
         : screen(nullptr), sidebar(nullptr), breadcrumb_wrap(nullptr), file_list(nullptr),
-          empty_label(nullptr), fs_bar(nullptr), fs_label(nullptr), fs_panel(nullptr), up_btn_ref(nullptr), drive_btn_l(nullptr), drive_btn_d(nullptr), menu_panel(nullptr), menu_copy_btn(nullptr), menu_paste_btn(nullptr), dialog_box(nullptr), dialog_input(nullptr),
+          empty_label(nullptr), fs_bar(nullptr), fs_label(nullptr), fs_panel(nullptr), up_btn_ref(nullptr), drive_btn_l(nullptr), drive_btn_d(nullptr), menu_panel(nullptr), menu_copy_btn(nullptr), menu_paste_btn(nullptr), menu_paste_label(nullptr), menu_paste_progress_track(nullptr), menu_paste_progress_bg(nullptr), menu_copy_cancel_btn(nullptr), menu_copy_cancel_label(nullptr), copy_timer(nullptr), copy_src_drive('L'), copy_dst_drive('L'), copy_src_inner(""), copy_dst_inner(""), copy_total_bytes(0), copy_done_bytes(0), dialog_box(nullptr), dialog_input(nullptr),
           dialog_ime_container(nullptr), dialog_ime(nullptr), dialog_keyboard(nullptr),
           dialog_new_file_btn(nullptr), dialog_new_dir_btn(nullptr),
           dialog_ime_font_acquired(false),
           on_open_cb(nullptr), sd_ready(false), remove_mode(false), copy_pick_mode(false), active_drive('L'),
-          current_path("/"), selected_vpath(""), copied_vpath(""), pending_open_vpath(""), new_as_dir(false), dialog_mode(DIALOG_NONE),
+          current_path("/"), selected_vpath(""), copied_vpath(""), pending_open_vpath(""), new_as_dir(false), copy_cancel_requested(false), copy_in_progress(false), copy_started_ms(0), dialog_mode(DIALOG_NONE),
           fs_usage_last_ms(0), fs_usage_last_pct(0), fs_usage_last_valid(false), list_suspended_for_dialog(false) {}
 
     void create(bool has_sd, std::function<void(const char*)> on_open = nullptr) {
@@ -268,6 +290,28 @@ public:
         addMenuAction(menu_panel, LV_SYMBOL_TRASH " Delete", menu_remove_event_cb);
         menu_copy_btn = addMenuAction(menu_panel, LV_SYMBOL_COPY " Copy", menu_copy_event_cb);
         menu_paste_btn = addMenuAction(menu_panel, LV_SYMBOL_PASTE " Paste", menu_paste_event_cb);
+        menu_paste_label = lv_obj_get_child(menu_paste_btn, 0);
+        menu_paste_progress_track = lv_obj_create(menu_paste_btn);
+        lv_obj_remove_style_all(menu_paste_progress_track);
+        lv_obj_set_size(menu_paste_progress_track, lv_pct(100), 18);
+        lv_obj_align(menu_paste_progress_track, LV_ALIGN_CENTER, 0, 0);
+        lv_obj_set_style_bg_color(menu_paste_progress_track, lv_color_hex(0x2A2A2A), 0);
+        lv_obj_set_style_bg_opa(menu_paste_progress_track, LV_OPA_80, 0);
+        lv_obj_set_style_radius(menu_paste_progress_track, 3, 0);
+        lv_obj_add_flag(menu_paste_progress_track, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_to_index(menu_paste_progress_track, 0);
+
+        menu_paste_progress_bg = lv_obj_create(menu_paste_progress_track);
+        lv_obj_remove_style_all(menu_paste_progress_bg);
+        lv_obj_set_size(menu_paste_progress_bg, 0, 18);
+        lv_obj_set_align(menu_paste_progress_bg, LV_ALIGN_LEFT_MID);
+        lv_obj_set_style_bg_color(menu_paste_progress_bg, lv_color_hex(0x5CB8FF), 0);
+        lv_obj_set_style_bg_opa(menu_paste_progress_bg, LV_OPA_90, 0);
+        lv_obj_set_style_radius(menu_paste_progress_bg, 3, 0);
+        if (menu_paste_label) lv_obj_move_foreground(menu_paste_label);
+        menu_copy_cancel_btn = addMenuAction(menu_panel, LV_SYMBOL_CLOSE " Cancel", menu_copy_cancel_event_cb);
+        menu_copy_cancel_label = lv_obj_get_child(menu_copy_cancel_btn, 0);
+        lv_obj_add_flag(menu_copy_cancel_btn, LV_OBJ_FLAG_HIDDEN);
         addMenuAction(menu_panel, LV_SYMBOL_EDIT " Rename", menu_rename_event_cb);
         lv_obj_add_flag(menu_panel, LV_OBJ_FLAG_HIDDEN);
         updateMenuActionStates();
@@ -276,6 +320,7 @@ public:
     }
 
     void destroy() {
+        cancelCopyJob(true);
         releaseDialogIMEFont();
         if (screen) {
             clearList();
@@ -293,6 +338,12 @@ public:
             menu_panel = nullptr;
             menu_copy_btn = nullptr;
             menu_paste_btn = nullptr;
+            menu_paste_label = nullptr;
+            menu_paste_progress_track = nullptr;
+            menu_paste_progress_bg = nullptr;
+            menu_copy_cancel_btn = nullptr;
+            menu_copy_cancel_label = nullptr;
+            copy_timer = nullptr;
             dialog_box = nullptr;
             dialog_input = nullptr;
             dialog_ime_container = nullptr;
@@ -308,6 +359,8 @@ public:
             else lv_screen_load_anim(screen, anim, SCREEN_TRANSITION_MS, 0, false);
         }
     }
+
+    bool isCopyInProgress() const { return copy_in_progress; }
 
 private:
     static void drive_btn_event_cb(lv_event_t* e) {
@@ -459,6 +512,7 @@ private:
     static void menu_paste_event_cb(lv_event_t* e) {
         FileManager* fm = (FileManager*)lv_event_get_user_data(e);
         if (!fm) return;
+        if (fm->copy_in_progress) return;
         fm->exitRemoveModeIfNeeded(true);
         fm->exitCopyPickModeIfNeeded(false);
         fm->pasteCopied();
@@ -472,6 +526,18 @@ private:
         if (fm->selected_vpath.length() == 0) return;
         String cur = fm->baseName(fm->innerPath(fm->selected_vpath));
         fm->openInputDialog(DIALOG_RENAME, "Rename to", cur.c_str());
+    }
+
+    static void menu_copy_cancel_event_cb(lv_event_t* e) {
+        FileManager* fm = (FileManager*)lv_event_get_user_data(e);
+        if (!fm) return;
+        fm->copy_cancel_requested = true;
+    }
+
+    static void copy_timer_cb(lv_timer_t* t) {
+        FileManager* fm = (FileManager*)lv_timer_get_user_data(t);
+        if (!fm) return;
+        fm->stepCopyJob();
     }
 
     static void dialog_ok_event_cb(lv_event_t* e) {
@@ -898,9 +964,18 @@ private:
     }
 
     void updateMenuActionStates() {
+        if (menu_copy_btn) {
+            if (copy_in_progress) lv_obj_add_state(menu_copy_btn, LV_STATE_DISABLED);
+            else lv_obj_clear_state(menu_copy_btn, LV_STATE_DISABLED);
+        }
         if (menu_paste_btn) {
-            if (copied_vpath.length() > 0) lv_obj_clear_state(menu_paste_btn, LV_STATE_DISABLED);
+            if (copy_in_progress) lv_obj_add_state(menu_paste_btn, LV_STATE_DISABLED);
+            else if (copied_vpath.length() > 0) lv_obj_clear_state(menu_paste_btn, LV_STATE_DISABLED);
             else lv_obj_add_state(menu_paste_btn, LV_STATE_DISABLED);
+        }
+        if (menu_copy_cancel_btn) {
+            if (copy_in_progress) lv_obj_clear_state(menu_copy_cancel_btn, LV_STATE_DISABLED);
+            else lv_obj_add_state(menu_copy_cancel_btn, LV_STATE_DISABLED);
         }
     }
 
@@ -933,8 +1008,8 @@ private:
     void openInputDialog(DialogMode mode, const char* title, const char* initial) {
         closeMenuPanel();
         closeDialog();
-        dialog_mode = mode;
         suspendListForDialog();
+        dialog_mode = mode;
 
         dialog_box = lv_obj_create(screen);
         lv_obj_add_flag(dialog_box, LV_OBJ_FLAG_FLOATING);
@@ -1400,19 +1475,134 @@ private:
     }
 
     void pasteCopied() {
-        if (copied_vpath.length() == 0) return;
+        if (copied_vpath.length() == 0 || copy_in_progress) return;
+        suspendListForDialog();
         String src_name = baseName(innerPath(copied_vpath));
-        String dest = joinPath(current_path, withCopySuffix(src_name));
-        String dest_v = String(active_drive) + ":" + dest;
-        int idx = 1;
-        while (pathExists(dest_v)) {
-            dest = joinPath(current_path, withCopySuffix(src_name, idx));
-            dest_v = String(active_drive) + ":" + dest;
-            idx++;
+        size_t src_size = getFileSize(copied_vpath);
+        String base_dest_v = String(active_drive) + ":" + joinPath(current_path, src_name);
+        String dest_v = nextAvailableVPath(base_dest_v);
+        showCopyProgressOnPaste();
+        if (!beginCopyJob(copied_vpath, dest_v, src_size)) {
+            hideCopyProgressOnPaste();
+            closeMenuPanel();
+            list_suspended_for_dialog = false;
+            refreshUi();
+            return;
         }
-        copyFile(copied_vpath, dest_v);
+    }
+
+    bool beginCopyJob(const String& src_vpath, const String& dst_vpath, size_t total_bytes) {
+        if (copy_in_progress) return false;
+        copy_src_drive = driveOf(src_vpath);
+        copy_dst_drive = driveOf(dst_vpath);
+        copy_src_inner = innerPath(src_vpath);
+        copy_dst_inner = innerPath(dst_vpath);
+        copy_total_bytes = total_bytes;
+        copy_done_bytes = 0;
+        copy_cancel_requested = false;
+        copy_started_ms = millis();
+
+        bool src_ok = false;
+        if (copy_src_drive == 'L') {
+            copy_src_lfs = LittleFS.open(copy_src_inner.c_str(), "r");
+            src_ok = (copy_src_lfs && !copy_src_lfs.isDirectory());
+        } else if (copy_src_drive == 'D' && sd_ready && StorageHelper::getInstance()->isInitialized()) {
+            copy_src_sdfs = StorageHelper::getInstance()->getFs().open(copy_src_inner.c_str(), O_RDONLY);
+            src_ok = (copy_src_sdfs && !copy_src_sdfs.isDir());
+        }
+        if (!src_ok) {
+            cancelCopyJob(false);
+            return false;
+        }
+
+        bool dst_ok = false;
+        if (copy_dst_drive == 'L') {
+            copy_dst_lfs = LittleFS.open(copy_dst_inner.c_str(), "w");
+            dst_ok = (bool)copy_dst_lfs;
+        } else if (copy_dst_drive == 'D' && sd_ready && StorageHelper::getInstance()->isInitialized()) {
+            copy_dst_sdfs = StorageHelper::getInstance()->getFs().open(copy_dst_inner.c_str(), O_WRONLY | O_CREAT | O_TRUNC);
+            dst_ok = (bool)copy_dst_sdfs;
+        }
+        if (!dst_ok) {
+            cancelCopyJob(false);
+            return false;
+        }
+
+        copy_in_progress = true;
+        updateMenuActionStates();
+        if (menu_panel) lv_obj_remove_flag(menu_panel, LV_OBJ_FLAG_HIDDEN);
+        copy_timer = lv_timer_create(copy_timer_cb, 8, this);
+        if (!copy_timer) {
+            cancelCopyJob(true);
+            return false;
+        }
+        return true;
+    }
+
+    void cancelCopyJob(bool remove_partial) {
+        if (copy_timer) {
+            lv_timer_del(copy_timer);
+            copy_timer = nullptr;
+        }
+        if (copy_src_lfs) copy_src_lfs.close();
+        if (copy_dst_lfs) copy_dst_lfs.close();
+        if (copy_src_sdfs) copy_src_sdfs.close();
+        if (copy_dst_sdfs) copy_dst_sdfs.close();
+        if (remove_partial && copy_dst_inner.length() > 0) {
+            if (copy_dst_drive == 'L') LittleFS.remove(copy_dst_inner.c_str());
+            else if (copy_dst_drive == 'D' && sd_ready && StorageHelper::getInstance()->isInitialized()) {
+                StorageHelper::getInstance()->getFs().remove(copy_dst_inner.c_str());
+            }
+        }
+        copy_in_progress = false;
+        copy_cancel_requested = false;
+        copy_src_inner = "";
+        copy_dst_inner = "";
+        copy_total_bytes = 0;
+        copy_done_bytes = 0;
+        updateMenuActionStates();
+    }
+
+    void finishCopyJob(bool success) {
+        cancelCopyJob(!success);
+        hideCopyProgressOnPaste();
         closeMenuPanel();
+        list_suspended_for_dialog = false;
         refreshUi();
+    }
+
+    void stepCopyJob() {
+        if (!copy_in_progress) return;
+        if (copy_cancel_requested) {
+            finishCopyJob(false);
+            return;
+        }
+
+        for (uint8_t i = 0; i < COPY_CHUNKS_PER_TICK; i++) {
+            int n = -1;
+            if (copy_src_drive == 'L') n = copy_src_lfs.read(copy_buf, COPY_IO_CHUNK);
+            else if (copy_src_drive == 'D') n = copy_src_sdfs.read(copy_buf, COPY_IO_CHUNK);
+            if (n < 0) {
+                finishCopyJob(false);
+                return;
+            }
+            if (n == 0) {
+                updateCopyProgressOnPaste(copy_total_bytes, copy_total_bytes);
+                finishCopyJob(true);
+                return;
+            }
+
+            int w = -1;
+            if (copy_dst_drive == 'L') w = (int)copy_dst_lfs.write(copy_buf, (size_t)n);
+            else if (copy_dst_drive == 'D') w = (int)copy_dst_sdfs.write(copy_buf, (size_t)n);
+            if (w != n) {
+                finishCopyJob(false);
+                return;
+            }
+            copy_done_bytes += (size_t)n;
+        }
+
+        updateCopyProgressOnPaste(copy_done_bytes, copy_total_bytes);
     }
 
     char driveOf(const String& vpath) const {
@@ -1425,13 +1615,23 @@ private:
     }
 
     String innerPath(const String& vpath) const {
+        char d = driveOf(vpath);
         if (vpath.length() >= 2 && vpath.charAt(1) == ':') {
             String p = vpath.substring(2);
             if (!p.startsWith("/")) p = "/" + p;
+            if (d == 'L') {
+                if (p == "/littlefs") return "/";
+                if (p.startsWith("/littlefs/")) p = p.substring(9);
+            } else if (d == 'D') {
+                if (p == "/sd") return "/";
+                if (p.startsWith("/sd/")) p = p.substring(3);
+            }
             return p;
         }
         String p = vpath;
         if (!p.startsWith("/")) p = "/" + p;
+        if (p == "/littlefs") return "/";
+        if (p.startsWith("/littlefs/")) p = p.substring(9);
         return p;
     }
 
@@ -1446,14 +1646,6 @@ private:
         int idx = p.lastIndexOf('/');
         if (idx <= 0) return "/";
         return p.substring(0, idx);
-    }
-
-    String withCopySuffix(const String& name, int n = 0) const {
-        int dot = name.lastIndexOf('.');
-        String stem = (dot > 0) ? name.substring(0, dot) : name;
-        String ext = (dot > 0) ? name.substring(dot) : "";
-        if (n == 0) return stem + "_copy" + ext;
-        return stem + "_copy" + String(n) + ext;
     }
 
     bool pathExists(const String& vpath) {
@@ -1745,13 +1937,85 @@ private:
         return false;
     }
 
-    bool copyFile(const String& src_vpath, const String& dst_vpath) {
+    String formatEta(uint32_t seconds) const {
+        if (seconds >= 3600) {
+            uint32_t h = seconds / 3600;
+            uint32_t m = (seconds % 3600) / 60;
+            return String(h) + "h" + String(m) + "m";
+        }
+        if (seconds >= 60) {
+            uint32_t m = seconds / 60;
+            uint32_t s = seconds % 60;
+            return String(m) + "m" + String(s) + "s";
+        }
+        return String(seconds) + "s";
+    }
+
+    void showCopyProgressOnPaste() {
+        if (menu_paste_progress_track) {
+            lv_obj_clear_flag(menu_paste_progress_track, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (menu_paste_progress_bg) {
+            lv_obj_set_size(menu_paste_progress_bg, 0, 18);
+        }
+        if (menu_copy_cancel_btn) lv_obj_clear_flag(menu_copy_cancel_btn, LV_OBJ_FLAG_HIDDEN);
+        if (menu_paste_label) lv_label_set_text(menu_paste_label, LV_SYMBOL_PASTE " Paste 0%");
+        if (menu_copy_cancel_label) lv_label_set_text(menu_copy_cancel_label, LV_SYMBOL_CLOSE " Cancel");
+        lv_refr_now(NULL);
+    }
+
+    void hideCopyProgressOnPaste() {
+        if (menu_paste_progress_track) {
+            lv_obj_add_flag(menu_paste_progress_track, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (menu_paste_progress_bg) {
+            lv_obj_set_size(menu_paste_progress_bg, 0, 18);
+        }
+        if (menu_paste_label) lv_label_set_text(menu_paste_label, LV_SYMBOL_PASTE " Paste");
+        if (menu_copy_cancel_btn) lv_obj_add_flag(menu_copy_cancel_btn, LV_OBJ_FLAG_HIDDEN);
+        if (menu_copy_cancel_label) lv_label_set_text(menu_copy_cancel_label, LV_SYMBOL_CLOSE " Cancel");
+        lv_refr_now(NULL);
+    }
+
+    void updateCopyProgressOnPaste(size_t done, size_t total) {
+        if (!menu_paste_progress_track || !menu_paste_progress_bg || !menu_paste_label || total == 0) return;
+
+        int pct = (int)((done * 100) / total);
+        if (pct < 0) pct = 0;
+        if (pct > 100) pct = 100;
+
+        int32_t full_w = lv_obj_get_width(menu_paste_progress_track);
+        if (full_w < 0) full_w = 0;
+        int32_t fill_w = (int32_t)((full_w * pct) / 100);
+        if (fill_w < 0) fill_w = 0;
+        if (fill_w > full_w) fill_w = full_w;
+        lv_obj_set_size(menu_paste_progress_bg, fill_w, 18);
+
+        uint32_t elapsed_ms = millis() - copy_started_ms;
+        if (done > 0 && elapsed_ms >= 250) {
+            uint32_t eta_s = (uint32_t)(((uint64_t)(total - done) * elapsed_ms) / done / 1000ULL);
+            String txt = String(LV_SYMBOL_PASTE) + " Paste " + String(pct) + "% " + formatEta(eta_s);
+            lv_label_set_text(menu_paste_label, txt.c_str());
+        } else {
+            char paste_txt[32];
+            lv_snprintf(paste_txt, sizeof(paste_txt), LV_SYMBOL_PASTE " Paste %d%%", pct);
+            lv_label_set_text(menu_paste_label, paste_txt);
+        }
+
+        if (menu_copy_cancel_label) {
+            lv_label_set_text(menu_copy_cancel_label, LV_SYMBOL_CLOSE " Cancel");
+        }
+    }
+
+    bool copyFile(const String& src_vpath, const String& dst_vpath, size_t total_bytes = 0, bool show_progress = false) {
         char sd = driveOf(src_vpath);
         char dd = driveOf(dst_vpath);
         String sp = innerPath(src_vpath);
         String dp = innerPath(dst_vpath);
         static constexpr size_t CHUNK = 1024;
         uint8_t buf[CHUNK];
+        size_t copied = 0;
+        uint32_t chunks = 0;
 
         if (sd == 'L' && dd == 'L') {
             File in = LittleFS.open(sp.c_str(), "r");
@@ -1759,13 +2023,26 @@ private:
             File out = LittleFS.open(dp.c_str(), "w");
             if (!out) { in.close(); return false; }
             while (true) {
+                lv_timer_handler();
+                if (copy_cancel_requested) {
+                    in.close();
+                    out.close();
+                    LittleFS.remove(dp.c_str());
+                    return false;
+                }
                 int n = in.read(buf, CHUNK);
                 if (n <= 0) break;
                 if ((int)out.write(buf, (size_t)n) != n) { in.close(); out.close(); return false; }
+                copied += (size_t)n;
+                if (show_progress && ((++chunks & 0x03) == 0)) {
+                    updateCopyProgressOnPaste(copied, total_bytes);
+                    lv_refr_now(NULL);
+                }
                 delay(0);
             }
             in.close();
             out.close();
+            if (show_progress) updateCopyProgressOnPaste(copied, total_bytes);
             return true;
         }
         if (sd == 'D' && dd == 'D' && sd_ready && StorageHelper::getInstance()->isInitialized()) {
@@ -1775,13 +2052,26 @@ private:
             FsFile out = fs.open(dp.c_str(), O_WRONLY | O_CREAT | O_TRUNC);
             if (!out) { in.close(); return false; }
             while (true) {
+                lv_timer_handler();
+                if (copy_cancel_requested) {
+                    in.close();
+                    out.close();
+                    fs.remove(dp.c_str());
+                    return false;
+                }
                 int n = in.read(buf, CHUNK);
                 if (n <= 0) break;
                 if ((int)out.write(buf, (size_t)n) != n) { in.close(); out.close(); return false; }
+                copied += (size_t)n;
+                if (show_progress && ((++chunks & 0x03) == 0)) {
+                    updateCopyProgressOnPaste(copied, total_bytes);
+                    lv_refr_now(NULL);
+                }
                 delay(0);
             }
             in.close();
             out.close();
+            if (show_progress) updateCopyProgressOnPaste(copied, total_bytes);
             return true;
         }
         if (sd == 'L' && dd == 'D' && sd_ready && StorageHelper::getInstance()->isInitialized()) {
@@ -1791,13 +2081,26 @@ private:
             FsFile out = fs.open(dp.c_str(), O_WRONLY | O_CREAT | O_TRUNC);
             if (!out) { in.close(); return false; }
             while (true) {
+                lv_timer_handler();
+                if (copy_cancel_requested) {
+                    in.close();
+                    out.close();
+                    fs.remove(dp.c_str());
+                    return false;
+                }
                 int n = in.read(buf, CHUNK);
                 if (n <= 0) break;
                 if ((int)out.write(buf, (size_t)n) != n) { in.close(); out.close(); return false; }
+                copied += (size_t)n;
+                if (show_progress && ((++chunks & 0x03) == 0)) {
+                    updateCopyProgressOnPaste(copied, total_bytes);
+                    lv_refr_now(NULL);
+                }
                 delay(0);
             }
             in.close();
             out.close();
+            if (show_progress) updateCopyProgressOnPaste(copied, total_bytes);
             return true;
         }
         if (sd == 'D' && dd == 'L' && sd_ready && StorageHelper::getInstance()->isInitialized()) {
@@ -1807,13 +2110,26 @@ private:
             File out = LittleFS.open(dp.c_str(), "w");
             if (!out) { in.close(); return false; }
             while (true) {
+                lv_timer_handler();
+                if (copy_cancel_requested) {
+                    in.close();
+                    out.close();
+                    LittleFS.remove(dp.c_str());
+                    return false;
+                }
                 int n = in.read(buf, CHUNK);
                 if (n <= 0) break;
                 if ((int)out.write(buf, (size_t)n) != n) { in.close(); out.close(); return false; }
+                copied += (size_t)n;
+                if (show_progress && ((++chunks & 0x03) == 0)) {
+                    updateCopyProgressOnPaste(copied, total_bytes);
+                    lv_refr_now(NULL);
+                }
                 delay(0);
             }
             in.close();
             out.close();
+            if (show_progress) updateCopyProgressOnPaste(copied, total_bytes);
             return true;
         }
         return false;

@@ -41,6 +41,7 @@ public:
         lv_obj_set_style_bg_color(screen, lv_color_hex(0x000000), 0);
         lv_obj_set_style_border_width(screen, 0, 0);
         lv_obj_set_style_pad_all(screen, 0, 0);
+        lv_obj_set_style_pad_row(screen, 0, 0);
         lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
         lv_obj_t* toolbar = lv_obj_create(screen);
@@ -49,6 +50,8 @@ public:
         lv_obj_set_flex_flow(toolbar, LV_FLEX_FLOW_ROW);
         lv_obj_set_style_pad_all(toolbar, 2, 0);
         lv_obj_set_style_pad_column(toolbar, 2, 0);
+        lv_obj_set_style_margin_all(toolbar, 0, 0);
+        lv_obj_set_style_radius(toolbar, 0, 0);
         lv_obj_set_style_bg_color(toolbar, lv_color_hex(0x101010), 0);
         lv_obj_set_style_border_color(toolbar, lv_color_hex(0x303030), 0);
         lv_obj_clear_flag(toolbar, LV_OBJ_FLAG_SCROLLABLE);
@@ -127,6 +130,8 @@ public:
         lv_obj_set_style_bg_color(textarea, lv_color_hex(0x000000), 0);
         lv_obj_set_style_border_color(textarea, lv_color_hex(0x303030), 0);
         lv_obj_set_style_text_color(textarea, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_set_style_margin_all(textarea, 0, 0);
+        lv_obj_set_style_radius(textarea, 4, 0);
         lv_obj_set_style_pad_all(textarea, 4, 0);
         lv_obj_set_style_text_font(textarea, FontManager::textFont(), 0);
         lv_obj_set_style_bg_color(textarea, lv_color_hex(0xFFFFFF), LV_PART_CURSOR);
@@ -140,7 +145,9 @@ public:
         lv_obj_set_flex_flow(ime_container, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_style_bg_color(ime_container, lv_color_hex(0x000000), 0);
         lv_obj_set_style_border_color(ime_container, lv_color_hex(0x303030), 0);
-        lv_obj_set_style_border_width(ime_container, 1, 0);
+        lv_obj_set_style_border_width(ime_container, 0, 0);
+        lv_obj_set_style_margin_all(ime_container, 0, 0);
+        lv_obj_set_style_radius(ime_container, 4, 0);
         lv_obj_set_style_pad_all(ime_container, 0, 0);
         lv_obj_clear_flag(ime_container, LV_OBJ_FLAG_SCROLLABLE);
 
