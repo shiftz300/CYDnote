@@ -81,6 +81,19 @@ CYDnote 是一个基于 `ESP32-2432S028R`（CYD）开发板的本地文本笔记
 - 运行时 `L:` 对应 LittleFS
 - `D:` 则对应SD卡（如有）
 
+## 字体说明
+
+- 当前 `src/font.c` 来源：`SourceHanSansCN-Regular`
+- 转换参数：
+  - Range: `0x20-0x7F,0x3000-0x303F,0x3040-0x30FF,0x4E00-0x9FAF,0x0400-0x04FF`
+  - Size: `14`
+  - Bpp: `2-bit-per-pixel`
+  - `Enable font compression`: 已启用
+- 范围说明（按当前 Range 码位统计）：
+  - 常用中文（CJK 主区）：`0x4E00-0x9FAF`，共 `20912` 个码位
+  - 常用日文（假名）：`0x3040-0x30FF`，共 `192` 个码位
+  - 西里尔：`0x0400-0x04FF`，共 `256` 个码位（含扩展）
+
 ## 已知限制
 
 - 大字符集显示能力受当前编译字体集限制

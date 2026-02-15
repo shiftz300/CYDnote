@@ -5,12 +5,14 @@
 #include <functional>
 #include "../config.h"
 #include "font_manager.h"
-#include "custom_pinyin_dict_plus.h"
+#include "../ime/custom_pinyin_dict_plus.h"
+#include "../ime/ime_mru.h"
 
 class Editor {
 private:
     static constexpr int32_t SCREEN_TRANSITION_MS = 55;
     static constexpr int32_t IME_ANIM_TIME_MS = 90;
+    static constexpr int32_t EDITOR_TEXT_SIZE_PX = 14;
     static constexpr int32_t IME_CANDIDATE_H = 64;
     static constexpr int32_t IME_KEYBOARD_H = 132;
     static constexpr int32_t IME_TOTAL_H_FALLBACK = IME_CANDIDATE_H + IME_KEYBOARD_H;
@@ -51,7 +53,8 @@ public:
         lv_obj_set_style_pad_all(toolbar, 2, 0);
         lv_obj_set_style_pad_column(toolbar, 2, 0);
         lv_obj_set_style_margin_all(toolbar, 0, 0);
-        lv_obj_set_style_radius(toolbar, 0, 0);
+        lv_obj_set_style_radius(toolbar, 4, 0);
+        lv_obj_set_style_clip_corner(toolbar, true, 0);
         lv_obj_set_style_bg_color(toolbar, lv_color_hex(0x101010), 0);
         lv_obj_set_style_border_color(toolbar, lv_color_hex(0x303030), 0);
         lv_obj_clear_flag(toolbar, LV_OBJ_FLAG_SCROLLABLE);
@@ -134,10 +137,13 @@ public:
         lv_obj_set_style_radius(textarea, 4, 0);
         lv_obj_set_style_pad_all(textarea, 4, 0);
         lv_obj_set_style_text_font(textarea, FontManager::textFont(), 0);
+        lv_obj_set_style_text_line_space(textarea, -4, 0);
         lv_obj_set_style_bg_color(textarea, lv_color_hex(0xFFFFFF), LV_PART_CURSOR);
         lv_obj_set_style_bg_opa(textarea, LV_OPA_70, LV_PART_CURSOR);
         lv_obj_set_style_width(textarea, 1, LV_PART_CURSOR);
-        lv_obj_add_event_cb(textarea, textarea_focus_event_cb, LV_EVENT_FOCUSED, this);
+        int32_t editor_cursor_h = EDITOR_TEXT_SIZE_PX;
+        if (editor_cursor_h < 4) editor_cursor_h = 4;
+        lv_obj_set_style_height(textarea, editor_cursor_h, LV_PART_CURSOR);
 
         ime_container = lv_obj_create(screen);
         lv_obj_set_width(ime_container, lv_pct(100));
@@ -178,6 +184,10 @@ public:
         lv_ime_pinyin_set_keyboard(ime, keyboard);
         lv_ime_pinyin_set_dict(ime, g_pinyin_dict_plus);
         lv_ime_pinyin_set_mode(ime, LV_IME_PINYIN_MODE_K26);
+        ImeMru::getInstance().init();
+        lv_obj_t* cand_panel = lv_ime_pinyin_get_cand_panel(ime);
+        lv_obj_add_event_cb(keyboard, ime_keyboard_mru_event_cb, LV_EVENT_VALUE_CHANGED, this);
+        if (cand_panel) lv_obj_add_event_cb(cand_panel, ime_cand_mru_event_cb, LV_EVENT_VALUE_CHANGED, this);
         applyIMEFonts();
 
         lv_obj_add_flag(ime_container, LV_OBJ_FLAG_HIDDEN);
@@ -325,12 +335,6 @@ private:
         ed->toggleIME();
     }
 
-    static void textarea_focus_event_cb(lv_event_t* e) {
-        Editor* ed = (Editor*)lv_event_get_user_data(e);
-        if (!ed) return;
-        ed->setIMEVisible(true);
-    }
-
     static void exit_btn_event_cb(lv_event_t* e) {
         Editor* ed = (Editor*)lv_event_get_user_data(e);
         if (!ed) return;
@@ -345,6 +349,23 @@ private:
         if (ed->on_save_cb) {
             ed->on_save_cb();
         }
+    }
+
+    static void ime_keyboard_mru_event_cb(lv_event_t* e) {
+        Editor* ed = (Editor*)lv_event_get_user_data(e);
+        if (!ed || !ed->ime) return;
+        lv_obj_t* cand_panel = lv_ime_pinyin_get_cand_panel(ed->ime);
+        ImeMru::getInstance().applyToCandidatePanel(cand_panel);
+    }
+
+    static void ime_cand_mru_event_cb(lv_event_t* e) {
+        Editor* ed = (Editor*)lv_event_get_user_data(e);
+        lv_obj_t* panel = (lv_obj_t*)lv_event_get_target(e);
+        if (!ed || !panel) return;
+        uint32_t id = lv_buttonmatrix_get_selected_button(panel);
+        const char* txt = lv_buttonmatrix_get_button_text(panel, id);
+        ImeMru::getInstance().learnFromUtf8(txt);
+        ImeMru::getInstance().applyToCandidatePanel(panel);
     }
 };
 

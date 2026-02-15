@@ -8,7 +8,8 @@
 #include <lvgl.h>
 #include "../utils/sd_helper.h"
 #include "font_manager.h"
-#include "custom_pinyin_dict_plus.h"
+#include "../ime/custom_pinyin_dict_plus.h"
+#include "../ime/ime_mru.h"
 
 class FileManager {
 private:
@@ -18,6 +19,7 @@ private:
     static constexpr int32_t DIALOG_LIFT_Y = -84;
     static constexpr int32_t IME_CANDIDATE_H = 64;
     static constexpr int32_t IME_KEYBOARD_H = 132;
+    static constexpr int32_t INPUT_TEXT_SIZE_PX = 14;
     static constexpr int32_t IME_TOTAL_H_FALLBACK = IME_CANDIDATE_H + IME_KEYBOARD_H;
     static constexpr size_t COPY_IO_CHUNK = 24576;
     static constexpr uint8_t COPY_CHUNKS_PER_TICK = 12;
@@ -98,6 +100,7 @@ private:
     int fs_usage_last_pct;
     bool fs_usage_last_valid;
     bool list_suspended_for_dialog;
+    bool reset_scroll_pending;
 
 public:
     FileManager()
@@ -108,7 +111,7 @@ public:
           dialog_ime_font_acquired(false),
           on_open_cb(nullptr), sd_ready(false), remove_mode(false), copy_pick_mode(false), active_drive('L'),
           current_path("/"), selected_vpath(""), copied_vpath(""), pending_open_vpath(""), new_as_dir(false), copy_cancel_requested(false), copy_in_progress(false), copy_started_ms(0), dialog_mode(DIALOG_NONE),
-          fs_usage_last_ms(0), fs_usage_last_pct(0), fs_usage_last_valid(false), list_suspended_for_dialog(false) {}
+          fs_usage_last_ms(0), fs_usage_last_pct(0), fs_usage_last_valid(false), list_suspended_for_dialog(false), reset_scroll_pending(true) {}
 
     void create(bool has_sd, std::function<void(const char*)> on_open = nullptr) {
         on_open_cb = on_open;
@@ -122,6 +125,7 @@ public:
         new_as_dir = false;
         dialog_mode = DIALOG_NONE;
         list_suspended_for_dialog = false;
+        reset_scroll_pending = true;
 
         screen = lv_obj_create(NULL);
         lv_obj_set_size(screen, 240, 320);
@@ -372,6 +376,7 @@ private:
         fm->active_drive = drive;
         fm->current_path = "/";
         fm->selected_vpath = "";
+        fm->reset_scroll_pending = true;
         fm->updateDriveButtonStyles();
         fm->refreshUi();
     }
@@ -385,6 +390,7 @@ private:
         }
         if (fm->current_path == "/") return;
         fm->goUp();
+        fm->reset_scroll_pending = true;
         fm->refreshUi();
     }
 
@@ -395,6 +401,7 @@ private:
         CrumbMeta* meta = (CrumbMeta*)lv_obj_get_user_data(btn);
         if (!meta) return;
         fm->current_path = meta->path;
+        fm->reset_scroll_pending = true;
         fm->refreshUi();
     }
 
@@ -418,6 +425,7 @@ private:
             if (meta->is_dir) {
                 fm->current_path = fm->joinPath(fm->current_path, meta->name);
                 fm->selected_vpath = "";
+                fm->reset_scroll_pending = true;
                 fm->refreshUi();
                 return;
             }
@@ -435,6 +443,7 @@ private:
         if (meta->is_dir) {
             fm->current_path = fm->joinPath(fm->current_path, meta->name);
             fm->selected_vpath = "";
+            fm->reset_scroll_pending = true;
             fm->refreshUi();
             return;
         }
@@ -477,7 +486,7 @@ private:
         fm->exitRemoveModeIfNeeded(true);
         fm->exitCopyPickModeIfNeeded(false);
         fm->new_as_dir = false;
-        fm->openInputDialog(DIALOG_NEW_ENTRY, "Create new", "new_note.txt");
+        fm->openInputDialog(DIALOG_NEW_ENTRY, "Create new", "note.txt");
     }
 
     static void menu_remove_event_cb(lv_event_t* e) {
@@ -609,6 +618,10 @@ private:
         FileManager* fm = (FileManager*)lv_event_get_user_data(e);
         if (!fm) return;
         fm->new_as_dir = false;
+        if (fm->dialog_mode == DIALOG_NEW_ENTRY && fm->dialog_input) {
+            lv_textarea_set_text(fm->dialog_input, "note.txt");
+            lv_textarea_set_cursor_pos(fm->dialog_input, LV_TEXTAREA_CURSOR_LAST);
+        }
         fm->updateNewTypeButtons();
     }
 
@@ -616,7 +629,28 @@ private:
         FileManager* fm = (FileManager*)lv_event_get_user_data(e);
         if (!fm) return;
         fm->new_as_dir = true;
+        if (fm->dialog_mode == DIALOG_NEW_ENTRY && fm->dialog_input) {
+            lv_textarea_set_text(fm->dialog_input, "folder");
+            lv_textarea_set_cursor_pos(fm->dialog_input, LV_TEXTAREA_CURSOR_LAST);
+        }
         fm->updateNewTypeButtons();
+    }
+
+    static void dialog_ime_keyboard_mru_event_cb(lv_event_t* e) {
+        FileManager* fm = (FileManager*)lv_event_get_user_data(e);
+        if (!fm || !fm->dialog_ime) return;
+        lv_obj_t* cand_panel = lv_ime_pinyin_get_cand_panel(fm->dialog_ime);
+        ImeMru::getInstance().applyToCandidatePanel(cand_panel);
+    }
+
+    static void dialog_ime_cand_mru_event_cb(lv_event_t* e) {
+        FileManager* fm = (FileManager*)lv_event_get_user_data(e);
+        lv_obj_t* panel = (lv_obj_t*)lv_event_get_target(e);
+        if (!fm || !panel) return;
+        uint32_t id = lv_buttonmatrix_get_selected_button(panel);
+        const char* txt = lv_buttonmatrix_get_button_text(panel, id);
+        ImeMru::getInstance().learnFromUtf8(txt);
+        ImeMru::getInstance().applyToCandidatePanel(panel);
     }
 
     void createDriveButton(const char* label, char drive, bool enabled) {
@@ -783,6 +817,11 @@ private:
         } else {
             lv_obj_add_flag(empty_label, LV_OBJ_FLAG_HIDDEN);
         }
+
+        if (reset_scroll_pending) {
+            lv_obj_scroll_to_y(file_list, 0, LV_ANIM_OFF);
+            reset_scroll_pending = false;
+        }
     }
 
     bool loadLittleFsEntries() {
@@ -838,7 +877,7 @@ private:
     void addEntryButton(const String& name, bool is_dir) {
         lv_obj_t* row = lv_button_create(file_list);
         lv_obj_set_width(row, lv_pct(100));
-        lv_obj_set_height(row, 32);
+        lv_obj_set_height(row, LV_SIZE_CONTENT);
         lv_obj_set_style_radius(row, 4, 0);
         lv_obj_set_style_bg_color(row, lv_color_hex(0x101010), LV_STATE_DEFAULT);
         lv_obj_set_style_bg_color(row, lv_color_hex(0x173248), LV_STATE_PRESSED);
@@ -848,9 +887,9 @@ private:
         lv_obj_set_style_border_width(row, 1, 0);
         lv_obj_set_style_shadow_width(row, 0, 0);
         lv_obj_set_style_pad_hor(row, 4, 0);
-        lv_obj_set_style_pad_ver(row, 1, 0);
+        lv_obj_set_style_pad_ver(row, 2, 0);
         lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER);
 
         EntryMeta* meta = new EntryMeta();
         meta->name = name;
@@ -865,9 +904,12 @@ private:
         lv_obj_t* lbl = lv_label_create(row);
         String text = formatEntryLabel(*meta);
         lv_label_set_text(lbl, text.c_str());
-        lv_label_set_long_mode(lbl, LV_LABEL_LONG_DOT);
+        lv_label_set_long_mode(lbl, LV_LABEL_LONG_WRAP);
         lv_obj_set_flex_grow(lbl, 1);
         lv_obj_set_width(lbl, lv_pct(100));
+        lv_obj_set_style_pad_top(lbl, 0, 0);
+        lv_obj_set_style_pad_bottom(lbl, 0, 0);
+        lv_obj_set_style_text_line_space(lbl, -2, 0);
         lv_obj_set_style_text_color(lbl, lv_color_hex(0xFFFFFF), 0);
         lv_obj_set_style_text_font(lbl, FontManager::textFont(), 0);
         meta->label = lbl;
@@ -1095,6 +1137,9 @@ private:
         lv_obj_set_style_bg_color(dialog_input, lv_color_hex(0xFFFFFF), LV_PART_CURSOR);
         lv_obj_set_style_bg_opa(dialog_input, LV_OPA_70, LV_PART_CURSOR);
         lv_obj_set_style_width(dialog_input, 1, LV_PART_CURSOR);
+        int32_t dialog_cursor_h = INPUT_TEXT_SIZE_PX;
+        if (dialog_cursor_h < 4) dialog_cursor_h = 4;
+        lv_obj_set_style_height(dialog_input, dialog_cursor_h, LV_PART_CURSOR);
         lv_obj_add_event_cb(dialog_input, dialog_input_event_cb, LV_EVENT_FOCUSED, this);
         lv_obj_add_event_cb(dialog_input, dialog_input_event_cb, LV_EVENT_CLICKED, this);
 
@@ -1196,6 +1241,10 @@ private:
         lv_ime_pinyin_set_keyboard(dialog_ime, dialog_keyboard);
         lv_ime_pinyin_set_dict(dialog_ime, g_pinyin_dict_plus);
         lv_ime_pinyin_set_mode(dialog_ime, LV_IME_PINYIN_MODE_K26);
+        ImeMru::getInstance().init();
+        lv_obj_t* cand_panel = lv_ime_pinyin_get_cand_panel(dialog_ime);
+        lv_obj_add_event_cb(dialog_keyboard, dialog_ime_keyboard_mru_event_cb, LV_EVENT_VALUE_CHANGED, this);
+        if (cand_panel) lv_obj_add_event_cb(cand_panel, dialog_ime_cand_mru_event_cb, LV_EVENT_VALUE_CHANGED, this);
 
         lv_obj_add_state(dialog_input, LV_STATE_FOCUSED);
         lv_obj_scroll_to_view(dialog_input, LV_ANIM_OFF);

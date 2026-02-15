@@ -34,7 +34,7 @@ XPT2046_Touchscreen touchscreen(XPT2046_CS);
 // - Smaller partial chunks reduce per-flush blocking.
 // - Optional double buffer improves overlap between render and flush.
 #ifndef LVGL_DRAW_BUF_DIV
-#define LVGL_DRAW_BUF_DIV 8
+#define LVGL_DRAW_BUF_DIV 12
 #endif
 #ifndef LVGL_DOUBLE_BUF
 #define LVGL_DOUBLE_BUF 1
@@ -217,7 +217,24 @@ void setup() {
   statusLedInit();
   statusLedSetState(LED_BOOTING);
   
+  // Initialize LittleFS for internal flash storage
+  delay(100);  // Give SPI time to settle
+  if (!esp_littlefs_mounted("spiffs")) {
+    if (!LittleFS.begin(true)) {  // true = format if mount fails
+      Serial.println("[ERROR] LittleFS mount failed!");
+      fs_mount_ok = false;
+    } else {
+      Serial.println("[LittleFS] mounted");
+      fs_mount_ok = true;
+    }
+  } else {
+    Serial.println("[LittleFS] already mounted");
+    fs_mount_ok = true;
+  }
+  FontManager::init();
+
   // Allocate LVGL draw buffer(s) from DMA-capable internal RAM.
+  // Do this after font load to maximize contiguous heap for lv_binfont parser.
   draw_buf_1 = (uint8_t*)heap_caps_malloc(DRAW_BUF_SIZE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
   if (!draw_buf_1) {
     Serial.println("[ERROR] Failed to allocate LVGL draw_buf_1");
@@ -242,29 +259,13 @@ void setup() {
   touchscreenSPI.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
   touchscreen.begin(touchscreenSPI);
   touchscreen.setRotation(0);
-    
+
   // Initialize an LVGL input device object (Touchscreen)
   lv_indev_t *indev = lv_indev_create();
   lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
 
   // Set the callback function to read Touchscreen input
   lv_indev_set_read_cb(indev, touchscreen_read);
-
-  // Initialize LittleFS for internal flash storage
-  delay(100);  // Give SPI time to settle
-  if (!esp_littlefs_mounted("spiffs")) {
-    if (!LittleFS.begin(true)) {  // true = format if mount fails
-      Serial.println("[ERROR] LittleFS mount failed!");
-      fs_mount_ok = false;
-    } else {
-      Serial.println("[LittleFS] mounted");
-      fs_mount_ok = true;
-    }
-  } else {
-    Serial.println("[LittleFS] already mounted");
-    fs_mount_ok = true;
-  }
-  FontManager::init();
 
   // Initialize application manager instead of demo GUI
   app = AppManager::getInstance();
