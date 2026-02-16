@@ -3,6 +3,10 @@
 
 #include <Arduino.h>
 #include <SPI.h>
+#include <FS.h>
+#ifndef DISABLE_FS_H_WARNING
+#define DISABLE_FS_H_WARNING
+#endif
 #include <SdFat.h>
 #include <SdCard/SdCardInfo.h>
 #include "../config.h"

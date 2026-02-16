@@ -2,6 +2,7 @@
 
 #include <LittleFS.h>
 #include <string.h>
+#include <stdlib.h>
 
 ImeMru& ImeMru::getInstance() {
     static ImeMru inst;
@@ -16,6 +17,9 @@ ImeMru::ImeMru() : inited(false), counter(0) {
 void ImeMru::init() {
     if (inited) return;
     inited = true;
+    // Ensure save file exists on first boot to avoid repeated "not exist" errors.
+    File ensure = LittleFS.open(SAVE_PATH, "a");
+    if (ensure) ensure.close();
     load();
 }
 
@@ -48,27 +52,65 @@ uint16_t ImeMru::scoreOf(uint32_t cp) const {
 void ImeMru::load() {
     File f = LittleFS.open(SAVE_PATH, "r");
     if (!f) return;
-    SaveImage img;
-    if (f.read((uint8_t*)&img, sizeof(img)) == (int)sizeof(img) &&
-        img.magic == MAGIC && img.version == VERSION && img.max_items == MAX_ITEMS) {
-        counter = img.counter;
-        memcpy(items, img.items, sizeof(items));
+
+    memset(items, 0, sizeof(items));
+    counter = 0;
+
+    char line[96];
+    int idx = 0;
+    while (f.available()) {
+        size_t n = f.readBytesUntil('\n', line, sizeof(line) - 1);
+        line[n] = '\0';
+        if (n == 0) continue;
+        if (line[0] == '\r' || line[0] == '\n') continue;
+
+        // Optional first line: #counter,<value>
+        if (line[0] == '#') {
+            if (strncmp(line, "#counter,", 9) == 0) {
+                long c = strtol(line + 9, nullptr, 10);
+                if (c >= 0 && c <= 0xFFFF) counter = (uint16_t)c;
+            }
+            continue;
+        }
+
+        char* p1 = strchr(line, ',');
+        if (!p1) continue;
+        *p1 = '\0';
+        char* p2 = strchr(p1 + 1, ',');
+        if (!p2) continue;
+        *p2 = '\0';
+
+        long cp = strtol(line, nullptr, 10);
+        long score = strtol(p1 + 1, nullptr, 10);
+        long order = strtol(p2 + 1, nullptr, 10);
+
+        if (cp <= 0 || cp > 0x10FFFF) continue;
+        if (score < 0 || score > 0xFFFF) continue;
+        if (order < 0 || order > 0xFFFF) continue;
+        if (idx >= MAX_ITEMS) break;
+
+        items[idx].cp = (uint32_t)cp;
+        items[idx].score = (uint16_t)score;
+        items[idx].order = (uint16_t)order;
+        idx++;
     }
     f.close();
 }
 
 void ImeMru::save() const {
-    SaveImage img;
-    img.magic = MAGIC;
-    img.version = VERSION;
-    img.max_items = MAX_ITEMS;
-    img.counter = counter;
-    img.reserved = 0;
-    memcpy(img.items, items, sizeof(items));
-
     File f = LittleFS.open(SAVE_PATH, "w");
     if (!f) return;
-    f.write((const uint8_t*)&img, sizeof(img));
+
+    f.print("#counter,");
+    f.println((unsigned int)counter);
+    for (int i = 0; i < MAX_ITEMS; i++) {
+        if (items[i].cp == 0) continue;
+        f.print((unsigned long)items[i].cp);
+        f.print(',');
+        f.print((unsigned int)items[i].score);
+        f.print(',');
+        f.println((unsigned int)items[i].order);
+    }
     f.close();
 }
 
@@ -216,4 +258,3 @@ void ImeMru::applyToCandidatePanel(lv_obj_t* cand_panel) {
         lv_buttonmatrix_set_map(cand_panel, pc->map);
     }
 }
-

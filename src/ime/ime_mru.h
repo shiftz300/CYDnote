@@ -13,24 +13,13 @@ public:
     void applyToCandidatePanel(lv_obj_t* cand_panel);
 
 private:
-    static constexpr const char* SAVE_PATH = "/ime_mru.bin";
+    static constexpr const char* SAVE_PATH = "/ime_mru.csv";
     static constexpr uint16_t MAX_ITEMS = 128;
-    static constexpr uint32_t MAGIC = 0x4D525531; // "MRU1"
-    static constexpr uint16_t VERSION = 1;
 
     struct Item {
         uint32_t cp;
         uint16_t score;
         uint16_t order;
-    };
-
-    struct SaveImage {
-        uint32_t magic;
-        uint16_t version;
-        uint16_t max_items;
-        uint16_t counter;
-        uint16_t reserved;
-        Item items[MAX_ITEMS];
     };
 
     struct PanelCache {
@@ -59,4 +48,3 @@ private:
 };
 
 #endif
-

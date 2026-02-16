@@ -46,6 +46,7 @@
 enum AppMode {
     MODE_FILE_MANAGER,
     MODE_EDITOR,
+    MODE_IMAGE_VIEWER,
     MODE_CONFIG
 };
 

@@ -18,6 +18,7 @@
 #include "config.h"
 #include "app_manager.h"
 #include "ui/font_manager.h"
+#include "utils/sd_helper.h"
 
 // Application manager instance
 AppManager* app = nullptr;
@@ -56,6 +57,117 @@ static const int TOUCH_DEADZONE_PX = 3;
 static uint8_t* draw_buf_1 = nullptr;
 static uint8_t* draw_buf_2 = nullptr;
 static bool fs_mount_ok = false;
+static bool lv_sd_fs_registered = false;
+
+typedef struct {
+  FsFile file;
+} LvSdFsFile;
+
+static String lv_sd_norm_path(const char* p) {
+  if (!p || p[0] == '\0') return "/";
+  String s = String(p);
+  if (!s.startsWith("/")) s = "/" + s;
+  return s;
+}
+
+static bool lv_sd_ready_cb(lv_fs_drv_t* drv) {
+  LV_UNUSED(drv);
+  StorageHelper* sh = StorageHelper::getInstance();
+  return sh && sh->isInitialized();
+}
+
+static void* lv_sd_open_cb(lv_fs_drv_t* drv, const char* path, lv_fs_mode_t mode) {
+  LV_UNUSED(drv);
+  StorageHelper* sh = StorageHelper::getInstance();
+  if (!sh || !sh->isInitialized()) return nullptr;
+
+  oflag_t flags = O_RDONLY;
+  if (mode == LV_FS_MODE_WR) flags = O_WRONLY | O_CREAT | O_TRUNC;
+  else if (mode == (LV_FS_MODE_RD | LV_FS_MODE_WR)) flags = O_RDWR | O_CREAT;
+
+  LvSdFsFile* f = new LvSdFsFile();
+  String p = lv_sd_norm_path(path);
+  f->file = sh->getFs().open(p.c_str(), flags);
+  if (!f->file.isOpen()) {
+    delete f;
+    return nullptr;
+  }
+  return f;
+}
+
+static lv_fs_res_t lv_sd_close_cb(lv_fs_drv_t* drv, void* file_p) {
+  LV_UNUSED(drv);
+  LvSdFsFile* f = (LvSdFsFile*)file_p;
+  if (!f) return LV_FS_RES_INV_PARAM;
+  if (f->file.isOpen()) f->file.close();
+  delete f;
+  return LV_FS_RES_OK;
+}
+
+static lv_fs_res_t lv_sd_read_cb(lv_fs_drv_t* drv, void* file_p, void* buf, uint32_t btr, uint32_t* br) {
+  LV_UNUSED(drv);
+  LvSdFsFile* f = (LvSdFsFile*)file_p;
+  if (!f || !br) return LV_FS_RES_INV_PARAM;
+  int32_t n = f->file.read((uint8_t*)buf, btr);
+  if (n < 0) {
+    *br = 0;
+    return LV_FS_RES_UNKNOWN;
+  }
+  *br = (uint32_t)n;
+  return LV_FS_RES_OK;
+}
+
+static lv_fs_res_t lv_sd_write_cb(lv_fs_drv_t* drv, void* file_p, const void* buf, uint32_t btw, uint32_t* bw) {
+  LV_UNUSED(drv);
+  LvSdFsFile* f = (LvSdFsFile*)file_p;
+  if (!f || !bw) return LV_FS_RES_INV_PARAM;
+  int32_t n = f->file.write((const uint8_t*)buf, btw);
+  if (n < 0) {
+    *bw = 0;
+    return LV_FS_RES_UNKNOWN;
+  }
+  *bw = (uint32_t)n;
+  return LV_FS_RES_OK;
+}
+
+static lv_fs_res_t lv_sd_seek_cb(lv_fs_drv_t* drv, void* file_p, uint32_t pos, lv_fs_whence_t whence) {
+  LV_UNUSED(drv);
+  LvSdFsFile* f = (LvSdFsFile*)file_p;
+  if (!f) return LV_FS_RES_INV_PARAM;
+  bool ok = false;
+  if (whence == LV_FS_SEEK_SET) ok = f->file.seekSet(pos);
+  else if (whence == LV_FS_SEEK_CUR) ok = f->file.seekCur((int32_t)pos);
+  else if (whence == LV_FS_SEEK_END) ok = f->file.seekEnd((int32_t)pos);
+  return ok ? LV_FS_RES_OK : LV_FS_RES_UNKNOWN;
+}
+
+static lv_fs_res_t lv_sd_tell_cb(lv_fs_drv_t* drv, void* file_p, uint32_t* pos_p) {
+  LV_UNUSED(drv);
+  LvSdFsFile* f = (LvSdFsFile*)file_p;
+  if (!f || !pos_p) return LV_FS_RES_INV_PARAM;
+  *pos_p = (uint32_t)f->file.curPosition();
+  return LV_FS_RES_OK;
+}
+
+static void register_lvgl_sd_fs_driver() {
+  if (lv_sd_fs_registered) return;
+  lv_fs_drv_t* drv = (lv_fs_drv_t*)lv_malloc(sizeof(lv_fs_drv_t));
+  if (!drv) {
+    Serial.println("[SD] lv_fs driver alloc failed");
+    return;
+  }
+  lv_fs_drv_init(drv);
+  drv->letter = 'D';
+  drv->ready_cb = lv_sd_ready_cb;
+  drv->open_cb = lv_sd_open_cb;
+  drv->close_cb = lv_sd_close_cb;
+  drv->read_cb = lv_sd_read_cb;
+  drv->write_cb = lv_sd_write_cb;
+  drv->seek_cb = lv_sd_seek_cb;
+  drv->tell_cb = lv_sd_tell_cb;
+  lv_fs_drv_register(drv);
+  lv_sd_fs_registered = true;
+}
 
 enum StatusLedState {
   LED_BOOTING = 0,
@@ -270,6 +382,7 @@ void setup() {
   // Initialize application manager instead of demo GUI
   app = AppManager::getInstance();
   app->init();
+  register_lvgl_sd_fs_driver();
   statusLedSetState(fs_mount_ok ? LED_READY : LED_ERROR);
   
   Serial.println("CYDnote initialized");

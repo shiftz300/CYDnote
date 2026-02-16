@@ -175,9 +175,21 @@ public:
         lv_obj_set_height(keyboard, IME_KEYBOARD_H);
         lv_obj_set_style_bg_color(keyboard, lv_color_hex(0x000000), 0);
         lv_obj_set_style_text_color(keyboard, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_set_style_bg_color(keyboard, lv_color_hex(0x1A1A1A), LV_PART_ITEMS);
-        lv_obj_set_style_text_color(keyboard, lv_color_hex(0xFFFFFF), LV_PART_ITEMS);
-        lv_obj_set_style_border_color(keyboard, lv_color_hex(0x303030), LV_PART_ITEMS);
+        lv_obj_set_style_bg_color(keyboard, lv_color_hex(0x1A1A1A), LV_PART_ITEMS | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_color(keyboard, lv_color_hex(0x222222), LV_PART_ITEMS | LV_STATE_FOCUSED);
+        lv_obj_set_style_bg_color(keyboard, lv_color_hex(0x2A2A2A), LV_PART_ITEMS | LV_STATE_PRESSED);
+        lv_obj_set_style_bg_color(keyboard, lv_color_hex(0x202020), LV_PART_ITEMS | LV_STATE_CHECKED);
+        lv_obj_set_style_bg_color(keyboard, lv_color_hex(0x111111), LV_PART_ITEMS | LV_STATE_DISABLED);
+        lv_obj_set_style_text_color(keyboard, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_color(keyboard, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_FOCUSED);
+        lv_obj_set_style_text_color(keyboard, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_PRESSED);
+        lv_obj_set_style_text_color(keyboard, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_CHECKED);
+        lv_obj_set_style_text_color(keyboard, lv_color_hex(0xB8B8B8), LV_PART_ITEMS | LV_STATE_DISABLED);
+        lv_obj_set_style_border_color(keyboard, lv_color_hex(0x303030), LV_PART_ITEMS | LV_STATE_DEFAULT);
+        lv_obj_set_style_border_color(keyboard, lv_color_hex(0x3A3A3A), LV_PART_ITEMS | LV_STATE_FOCUSED);
+        lv_obj_set_style_border_color(keyboard, lv_color_hex(0x4A4A4A), LV_PART_ITEMS | LV_STATE_PRESSED);
+        lv_obj_set_style_border_color(keyboard, lv_color_hex(0x3A3A3A), LV_PART_ITEMS | LV_STATE_CHECKED);
+        lv_obj_set_style_border_color(keyboard, lv_color_hex(0x242424), LV_PART_ITEMS | LV_STATE_DISABLED);
         lv_obj_set_style_text_font(keyboard, FontManager::imeFont(), LV_PART_MAIN);
         lv_obj_set_style_text_font(keyboard, FontManager::imeFont(), LV_PART_ITEMS);
         lv_keyboard_set_textarea(keyboard, textarea);
@@ -187,7 +199,19 @@ public:
         ImeMru::getInstance().init();
         lv_obj_t* cand_panel = lv_ime_pinyin_get_cand_panel(ime);
         lv_obj_add_event_cb(keyboard, ime_keyboard_mru_event_cb, LV_EVENT_VALUE_CHANGED, this);
-        if (cand_panel) lv_obj_add_event_cb(cand_panel, ime_cand_mru_event_cb, LV_EVENT_VALUE_CHANGED, this);
+        if (cand_panel) {
+            lv_obj_set_style_bg_color(cand_panel, lv_color_hex(0x000000), LV_PART_MAIN);
+            lv_obj_set_style_bg_color(cand_panel, lv_color_hex(0x111111), LV_PART_ITEMS | LV_STATE_DEFAULT);
+            lv_obj_set_style_bg_color(cand_panel, lv_color_hex(0x1A1A1A), LV_PART_ITEMS | LV_STATE_FOCUSED);
+            lv_obj_set_style_bg_color(cand_panel, lv_color_hex(0x202020), LV_PART_ITEMS | LV_STATE_PRESSED);
+            lv_obj_set_style_bg_color(cand_panel, lv_color_hex(0x151515), LV_PART_ITEMS | LV_STATE_CHECKED);
+            lv_obj_set_style_text_color(cand_panel, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+            lv_obj_set_style_text_color(cand_panel, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_color(cand_panel, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_FOCUSED);
+            lv_obj_set_style_text_color(cand_panel, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_PRESSED);
+            lv_obj_set_style_text_color(cand_panel, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_CHECKED);
+            lv_obj_add_event_cb(cand_panel, ime_cand_mru_event_cb, LV_EVENT_VALUE_CHANGED, this);
+        }
         applyIMEFonts();
 
         lv_obj_add_flag(ime_container, LV_OBJ_FLAG_HIDDEN);

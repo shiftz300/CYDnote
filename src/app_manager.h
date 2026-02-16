@@ -4,6 +4,8 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 #include <lvgl.h>
+#include <vector>
+#include <algorithm>
 #include "config.h"
 #include "utils/sd_helper.h"
 
@@ -11,22 +13,29 @@
 using SDHelper = StorageHelper;
 #include "ui/file_manager.h"
 #include "ui/editor.h"
+#include "ui/image_viewer.h"
 #include "ui/menu.h"
 
 class AppManager {
 private:
+    static constexpr size_t IMAGE_GALLERY_MAX_ITEMS = 128;
+    static constexpr size_t IMAGE_GALLERY_SCAN_ENTRY_LIMIT = 80;
+    static constexpr size_t IMAGE_GALLERY_SCAN_IMAGE_LIMIT = 64;
     AppMode current_mode;
     FileManager file_manager;
     Editor editor;
+    ImageViewer image_viewer;
     MenuManager menu_manager;
     SDHelper* sd_helper;
     String current_filename;
+    std::vector<String> image_gallery;
+    int image_index;
     
     // Static wrapper for LVGL callbacks
     static AppManager* instance;
     
 public:
-    AppManager() : current_mode(MODE_FILE_MANAGER), sd_helper(nullptr) {
+    AppManager() : current_mode(MODE_FILE_MANAGER), sd_helper(nullptr), image_index(-1) {
         instance = this;
     }
     
@@ -36,8 +45,17 @@ public:
         if (!sd_ok) Serial.println("[SD] unavailable, D: disabled");
         
         // Create UI components
-        file_manager.create(sd_ok, [this](const char* name){ this->showEditor(String(name)); });
+        file_manager.create(sd_ok, [this](const char* name){
+            String path = String(name ? name : "");
+            if (isImageFile(path)) this->showImage(path);
+            else this->showEditor(path);
+        });
         editor.create([this](){ this->showFileManager(); }, [this](){ this->handleSave(); });
+        image_viewer.create(
+            [this](){ this->showFileManager(); },
+            [this](){ this->showPrevImage(); },
+            [this](){ this->showNextImage(); }
+        );
         menu_manager.create();
         
         // Show file manager initially
@@ -45,6 +63,7 @@ public:
     }
     
     void showFileManager() {
+        clearImageGalleryCache();
         if (current_mode != MODE_FILE_MANAGER) {
             current_mode = MODE_FILE_MANAGER;
             file_manager.show(LV_SCR_LOAD_ANIM_FADE_IN);
@@ -54,6 +73,7 @@ public:
     }
     
     void showEditor(const String& filename) {
+        clearImageGalleryCache();
         if (current_mode != MODE_EDITOR) {
             current_mode = MODE_EDITOR;
         }
@@ -70,6 +90,16 @@ public:
         }
 
         editor.show(LV_SCR_LOAD_ANIM_FADE_IN);
+    }
+
+    void showImage(const String& filename) {
+        if (current_mode != MODE_IMAGE_VIEWER) {
+            current_mode = MODE_IMAGE_VIEWER;
+        }
+        image_viewer.setTitle(filename);
+        image_viewer.setImage(filename);
+        buildImageGallery(filename);
+        image_viewer.show(LV_SCR_LOAD_ANIM_NONE);
     }
     
     void update() {
@@ -241,6 +271,125 @@ private:
         int idx = path.lastIndexOf('/');
         if (idx <= 0) return "/";
         return path.substring(0, idx);
+    }
+
+    bool isImageFile(const String& path) const {
+        int dot = path.lastIndexOf('.');
+        if (dot < 0) return false;
+        String ext = path.substring(dot + 1);
+        ext.toLowerCase();
+        return (ext == "jpg" || ext == "jpeg");
+    }
+
+    void showPrevImage() {
+        if (image_gallery.empty()) return;
+        if (image_index < 0) image_index = 0;
+        image_index = (image_index - 1 + (int)image_gallery.size()) % (int)image_gallery.size();
+        const String& p = image_gallery[(size_t)image_index];
+        image_viewer.setTitle(p);
+        image_viewer.setImage(p);
+    }
+
+    void showNextImage() {
+        if (image_gallery.empty()) return;
+        if (image_index < 0) image_index = 0;
+        image_index = (image_index + 1) % (int)image_gallery.size();
+        const String& p = image_gallery[(size_t)image_index];
+        image_viewer.setTitle(p);
+        image_viewer.setImage(p);
+    }
+
+    String fileNameOf(const String& path) const {
+        int idx = path.lastIndexOf('/');
+        if (idx >= 0 && idx < (int)path.length() - 1) return path.substring(idx + 1);
+        return path;
+    }
+
+    String buildVPath(char drive, const String& inner) const {
+        String p = inner;
+        if (!p.startsWith("/")) p = "/" + p;
+        return String((char)drive) + ":" + p;
+    }
+
+    void buildImageGallery(const String& anchor_vpath) {
+        image_gallery.clear();
+        image_gallery.reserve(48);
+        image_gallery.push_back(anchor_vpath);
+        image_index = 0;
+
+        char drive = driveOf(anchor_vpath);
+        String inner = innerPathOf(anchor_vpath);
+        String dir = parentPath(inner);
+        if (dir.length() == 0) dir = "/";
+
+        size_t scanned = 0;
+
+        if (drive == 'L') {
+            File d = LittleFS.open(dir.c_str(), "r");
+            if (d) {
+                while (true) {
+                    File e = d.openNextFile();
+                    if (!e) break;
+                    scanned++;
+                    if (e.isDirectory()) {
+                        e.close();
+                        if (scanned >= IMAGE_GALLERY_SCAN_ENTRY_LIMIT) break;
+                        continue;
+                    }
+                    String name = String(e.name());
+                    e.close();
+                    if (!isImageFile(name)) continue;
+                    String full = dir;
+                    if (!full.endsWith("/")) full += "/";
+                    full += name;
+                    String vp = buildVPath('L', full);
+                    if (vp != anchor_vpath) image_gallery.push_back(vp);
+                    if (image_gallery.size() >= IMAGE_GALLERY_SCAN_IMAGE_LIMIT) break;
+                    if (scanned >= IMAGE_GALLERY_SCAN_ENTRY_LIMIT) break;
+                }
+                d.close();
+            }
+        } else if (drive == 'D' && sd_helper && sd_helper->isInitialized()) {
+            FsFile d = sd_helper->getFs().open(dir.c_str(), O_RDONLY);
+            if (d.isOpen()) {
+                FsFile e;
+                while (e.openNext(&d, O_RDONLY)) {
+                    scanned++;
+                    bool is_dir = e.isDir();
+                    char name_buf[128];
+                    name_buf[0] = '\0';
+                    e.getName(name_buf, sizeof(name_buf) - 1);
+                    name_buf[sizeof(name_buf) - 1] = '\0';
+                    e.close();
+                    if (is_dir) {
+                        if (scanned >= IMAGE_GALLERY_SCAN_ENTRY_LIMIT) break;
+                        continue;
+                    }
+                    String name = String(name_buf);
+                    if (!isImageFile(name)) continue;
+                    String full = dir;
+                    if (!full.endsWith("/")) full += "/";
+                    full += name;
+                    String vp = buildVPath('D', full);
+                    if (vp != anchor_vpath) image_gallery.push_back(vp);
+                    if (image_gallery.size() >= IMAGE_GALLERY_SCAN_IMAGE_LIMIT) break;
+                    if (scanned >= IMAGE_GALLERY_SCAN_ENTRY_LIMIT) break;
+                }
+                d.close();
+            }
+        }
+        if (image_gallery.size() > IMAGE_GALLERY_MAX_ITEMS) {
+            image_gallery.resize(IMAGE_GALLERY_MAX_ITEMS);
+        }
+    }
+
+    void clearImageGalleryCache() {
+        if (image_gallery.empty()) {
+            image_index = -1;
+            return;
+        }
+        std::vector<String>().swap(image_gallery);
+        image_index = -1;
     }
 };
 
