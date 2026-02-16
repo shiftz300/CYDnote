@@ -9,7 +9,6 @@ enum MenuAction {
     MENU_SAVE_AS,
     MENU_READ_MODE,
     MENU_SERVE_AP,
-    MENU_SERVE_BT,
     MENU_EXIT,
     MENU_NONE
 };
@@ -48,7 +47,6 @@ public:
         addMenuItem("Save As");
         addMenuItem("Read Mode");
         addMenuItem("Serve AP");
-        addMenuItem("Serve BT");
         addMenuItem("Exit");
         
         // Initially hidden
@@ -117,9 +115,6 @@ private:
             lv_obj_add_event_cb(btn, menu_event_cb, LV_EVENT_CLICKED, this);
         } else if (strcmp(label, "Serve AP") == 0) {
             lv_obj_set_user_data(btn, (void*)(intptr_t)MENU_SERVE_AP);
-            lv_obj_add_event_cb(btn, menu_event_cb, LV_EVENT_CLICKED, this);
-        } else if (strcmp(label, "Serve BT") == 0) {
-            lv_obj_set_user_data(btn, (void*)(intptr_t)MENU_SERVE_BT);
             lv_obj_add_event_cb(btn, menu_event_cb, LV_EVENT_CLICKED, this);
         } else if (strcmp(label, "Exit") == 0) {
             lv_obj_set_user_data(btn, (void*)(intptr_t)MENU_EXIT);

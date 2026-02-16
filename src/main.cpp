@@ -77,7 +77,7 @@ static const float BL_MAX_STEP_PCT = 2.0f;           // max brightness step per 
 static const float BL_DARK_ZONE = 0.35f;             // 0..35% ambient treated as dark zone
 static const float BL_DARK_GAIN = 0.12f;             // dark zone uses only 12% of total range
 static const float BL_ULTRA_DARK_ZONE = 0.10f;       // first 10%: extra compressed
-static const float BL_ULTRA_DARK_GAIN = 0.05f;       // first 10% uses only 2% of range
+static const float BL_ULTRA_DARK_GAIN = 0.02f;       // first 10% uses only 2% of range
 static const float BL_DARK_HYSTERESIS_PCT = 1.0f;    // low-light anti-flicker deadband
 
 static bool backlight_pwm_ready = false;

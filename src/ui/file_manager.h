@@ -57,6 +57,7 @@ private:
     lv_obj_t* fs_label;
     lv_obj_t* fs_panel;
     lv_obj_t* up_btn_ref;
+    lv_obj_t* share_btn_ref;
     lv_obj_t* drive_btn_l;
     lv_obj_t* drive_btn_d;
     lv_obj_t* menu_panel;
@@ -88,12 +89,18 @@ private:
     lv_obj_t* dialog_ime_cand_src;
     lv_obj_t* dialog_new_file_btn;
     lv_obj_t* dialog_new_dir_btn;
+    lv_obj_t* share_info_label;
+    lv_obj_t* share_action_btn;
+    lv_obj_t* share_action_label;
     bool dialog_ime_font_acquired;
     char dialog_ime_cand_texts[IME_PROXY_CAND_MAX][8];
     const char* dialog_ime_cand_map[IME_PROXY_CAND_MAX + 1];
     uint8_t dialog_ime_cand_src_idx[IME_PROXY_CAND_MAX];
     bool dialog_ime_cand_syncing;
     std::function<void(const char*)> on_open_cb;
+    std::function<bool()> on_share_ap_toggle_cb;
+    std::function<bool()> on_share_ap_running_cb;
+    std::function<String()> on_share_ap_status_cb;
 
     bool sd_ready;
     bool remove_mode;
@@ -119,11 +126,12 @@ private:
 public:
     FileManager()
         : screen(nullptr), sidebar(nullptr), breadcrumb_wrap(nullptr), file_list(nullptr),
-          empty_label(nullptr), fs_bar(nullptr), fs_label(nullptr), fs_panel(nullptr), up_btn_ref(nullptr), drive_btn_l(nullptr), drive_btn_d(nullptr), menu_panel(nullptr), menu_copy_btn(nullptr), menu_paste_btn(nullptr), menu_paste_label(nullptr), menu_paste_progress_track(nullptr), menu_paste_progress_bg(nullptr), menu_copy_cancel_btn(nullptr), menu_copy_cancel_label(nullptr), copy_timer(nullptr), copy_src_drive('L'), copy_dst_drive('L'), copy_src_inner(""), copy_dst_inner(""), copy_total_bytes(0), copy_done_bytes(0), dialog_box(nullptr), dialog_input(nullptr),
+          empty_label(nullptr), fs_bar(nullptr), fs_label(nullptr), fs_panel(nullptr), up_btn_ref(nullptr), share_btn_ref(nullptr), drive_btn_l(nullptr), drive_btn_d(nullptr), menu_panel(nullptr), menu_copy_btn(nullptr), menu_paste_btn(nullptr), menu_paste_label(nullptr), menu_paste_progress_track(nullptr), menu_paste_progress_bg(nullptr), menu_copy_cancel_btn(nullptr), menu_copy_cancel_label(nullptr), copy_timer(nullptr), copy_src_drive('L'), copy_dst_drive('L'), copy_src_inner(""), copy_dst_inner(""), copy_total_bytes(0), copy_done_bytes(0), dialog_box(nullptr), dialog_input(nullptr),
           dialog_ime_container(nullptr), dialog_ime(nullptr), dialog_keyboard(nullptr), dialog_ime_cand_proxy(nullptr), dialog_ime_cand_src(nullptr),
-          dialog_new_file_btn(nullptr), dialog_new_dir_btn(nullptr),
+          dialog_new_file_btn(nullptr), dialog_new_dir_btn(nullptr), share_info_label(nullptr), share_action_btn(nullptr), share_action_label(nullptr),
           dialog_ime_font_acquired(false), dialog_ime_cand_syncing(false),
-          on_open_cb(nullptr), sd_ready(false), remove_mode(false), copy_pick_mode(false), active_drive('L'),
+          on_open_cb(nullptr), on_share_ap_toggle_cb(nullptr), on_share_ap_running_cb(nullptr), on_share_ap_status_cb(nullptr),
+          sd_ready(false), remove_mode(false), copy_pick_mode(false), active_drive('L'),
           current_path("/"), selected_vpath(""), copied_vpath(""), pending_open_vpath(""), new_as_dir(false), copy_cancel_requested(false), copy_in_progress(false), copy_started_ms(0), dialog_mode(DIALOG_NONE),
           fs_usage_last_ms(0), fs_usage_last_pct(0), fs_usage_last_valid(false), list_suspended_for_dialog(false), reset_scroll_pending(true),
           dialog_ime_cursor_anchor_pos(0), dialog_ime_cursor_anchor_valid(false) {
@@ -132,8 +140,14 @@ public:
         memset(dialog_ime_cand_src_idx, 0xFF, sizeof(dialog_ime_cand_src_idx));
     }
 
-    void create(bool has_sd, std::function<void(const char*)> on_open = nullptr) {
+    void create(bool has_sd, std::function<void(const char*)> on_open = nullptr,
+                std::function<bool()> on_share_ap_toggle = nullptr,
+                std::function<bool()> on_share_ap_running = nullptr,
+                std::function<String()> on_share_ap_status = nullptr) {
         on_open_cb = on_open;
+        on_share_ap_toggle_cb = on_share_ap_toggle;
+        on_share_ap_running_cb = on_share_ap_running;
+        on_share_ap_status_cb = on_share_ap_status;
         sd_ready = has_sd;
         active_drive = 'L';
         current_path = "/";
@@ -281,6 +295,17 @@ public:
         lv_obj_center(menu_lbl);
         lv_obj_add_event_cb(menu_btn, menu_btn_event_cb, LV_EVENT_CLICKED, this);
 
+        lv_obj_t* share_btn = lv_button_create(control_row);
+        lv_obj_set_size(share_btn, 26, 26);
+        styleActionButton(share_btn);
+        share_btn_ref = share_btn;
+        lv_obj_t* share_lbl = lv_label_create(share_btn);
+        lv_label_set_text(share_lbl, LV_SYMBOL_UPLOAD);
+        lv_obj_set_style_text_font(share_lbl, FontManager::iconFont(), 0);
+        lv_obj_center(share_lbl);
+        lv_obj_add_event_cb(share_btn, share_btn_event_cb, LV_EVENT_CLICKED, this);
+        lv_obj_move_to_index(share_btn, lv_obj_get_index(menu_btn));
+
         file_list = lv_obj_create(main);
         lv_obj_set_width(file_list, lv_pct(100));
         lv_obj_set_flex_grow(file_list, 1);
@@ -357,6 +382,7 @@ public:
             empty_label = nullptr;
             fs_panel = nullptr;
             up_btn_ref = nullptr;
+            share_btn_ref = nullptr;
             drive_btn_l = nullptr;
             drive_btn_d = nullptr;
             menu_panel = nullptr;
@@ -375,6 +401,9 @@ public:
             dialog_keyboard = nullptr;
             dialog_ime_cand_proxy = nullptr;
             dialog_ime_cand_src = nullptr;
+            share_info_label = nullptr;
+            share_action_btn = nullptr;
+            share_action_label = nullptr;
             dialog_ime_font_acquired = false;
         }
     }
@@ -502,6 +531,12 @@ private:
         else lv_obj_add_flag(fm->menu_panel, LV_OBJ_FLAG_HIDDEN);
     }
 
+    static void share_btn_event_cb(lv_event_t* e) {
+        FileManager* fm = (FileManager*)lv_event_get_user_data(e);
+        if (!fm) return;
+        fm->openShareDialog();
+    }
+
     static void menu_new_event_cb(lv_event_t* e) {
         FileManager* fm = (FileManager*)lv_event_get_user_data(e);
         if (!fm) return;
@@ -590,6 +625,15 @@ private:
         FileManager* fm = (FileManager*)lv_event_get_user_data(e);
         if (!fm) return;
         fm->closeDialog();
+    }
+
+    static void share_action_event_cb(lv_event_t* e) {
+        FileManager* fm = (FileManager*)lv_event_get_user_data(e);
+        if (!fm) return;
+        if (fm->on_share_ap_toggle_cb) {
+            fm->on_share_ap_toggle_cb();
+            fm->refreshShareDialog();
+        }
     }
 
     static void dialog_input_event_cb(lv_event_t* e) {
@@ -1263,6 +1307,9 @@ private:
             dialog_input = nullptr;
             dialog_new_file_btn = nullptr;
             dialog_new_dir_btn = nullptr;
+            share_info_label = nullptr;
+            share_action_btn = nullptr;
+            share_action_label = nullptr;
             pending_open_vpath = "";
             dialog_mode = DIALOG_NONE;
         }
@@ -1410,6 +1457,74 @@ private:
         if (!dialog_ime_font_acquired) return;
         FontManager::releaseIMEFont();
         dialog_ime_font_acquired = false;
+    }
+
+    void refreshShareDialog() {
+        if (!dialog_box || !share_info_label) return;
+        String status = on_share_ap_status_cb ? on_share_ap_status_cb() : String("AP service unavailable");
+        String body = String("Hotspot Transfer\n") + status + "\nUpload/download: text files only";
+        lv_label_set_text(share_info_label, body.c_str());
+        if (share_action_btn) lv_obj_clear_flag(share_action_btn, LV_OBJ_FLAG_HIDDEN);
+        if (share_action_label) {
+            bool running = on_share_ap_running_cb ? on_share_ap_running_cb() : false;
+            lv_label_set_text(share_action_label, running ? "Stop AP" : "Start AP");
+        }
+    }
+
+    void openShareDialog() {
+        closeMenuPanel();
+        closeDialog();
+
+        dialog_box = lv_obj_create(screen);
+        lv_obj_add_flag(dialog_box, LV_OBJ_FLAG_FLOATING);
+        lv_obj_add_flag(dialog_box, LV_OBJ_FLAG_IGNORE_LAYOUT);
+        lv_obj_set_width(dialog_box, 206);
+        lv_obj_set_height(dialog_box, LV_SIZE_CONTENT);
+        lv_obj_center(dialog_box);
+        lv_obj_set_style_bg_color(dialog_box, lv_color_hex(0x000000), 0);
+        lv_obj_set_style_border_color(dialog_box, lv_color_hex(0x505050), 0);
+        lv_obj_set_style_pad_all(dialog_box, 6, 0);
+        lv_obj_set_style_pad_row(dialog_box, 4, 0);
+        lv_obj_set_flex_flow(dialog_box, LV_FLEX_FLOW_COLUMN);
+        lv_obj_clear_flag(dialog_box, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t* title = lv_label_create(dialog_box);
+        lv_label_set_text(title, "Share");
+        lv_obj_set_style_text_font(title, FontManager::textFont(), 0);
+        lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
+
+        share_info_label = lv_label_create(dialog_box);
+        lv_obj_set_width(share_info_label, lv_pct(100));
+        lv_label_set_long_mode(share_info_label, LV_LABEL_LONG_WRAP);
+        lv_obj_set_style_text_font(share_info_label, FontManager::textFont(), 0);
+        lv_obj_set_style_text_color(share_info_label, lv_color_hex(0xD0E6FF), 0);
+
+        lv_obj_t* row = lv_obj_create(dialog_box);
+        lv_obj_remove_style_all(row);
+        lv_obj_set_width(row, lv_pct(100));
+        lv_obj_set_height(row, 36);
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_column(row, 6, LV_PART_MAIN);
+        lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t* close_btn = lv_button_create(row);
+        lv_obj_set_size(close_btn, 56, 28);
+        styleActionButton(close_btn);
+        lv_obj_add_event_cb(close_btn, dialog_cancel_event_cb, LV_EVENT_CLICKED, this);
+        lv_obj_t* close_lbl = lv_label_create(close_btn);
+        lv_label_set_text(close_lbl, "Close");
+        lv_obj_center(close_lbl);
+
+        share_action_btn = lv_button_create(row);
+        lv_obj_set_size(share_action_btn, 72, 28);
+        styleActionButton(share_action_btn);
+        lv_obj_add_event_cb(share_action_btn, share_action_event_cb, LV_EVENT_CLICKED, this);
+        share_action_label = lv_label_create(share_action_btn);
+        lv_label_set_text(share_action_label, "Start AP");
+        lv_obj_center(share_action_label);
+
+        refreshShareDialog();
     }
 
     void openFsInfoDialog() {

@@ -27,7 +27,9 @@ private:
     lv_obj_t* ime_cand_proxy;
     lv_obj_t* ime_cand_src;
     lv_obj_t* ime_btn;
+    lv_obj_t* title_wrap;
     lv_obj_t* title_label;
+    lv_obj_t* top_btn;
     lv_obj_t* save_popup;
     lv_timer_t* save_popup_timer;
     char ime_cand_texts[IME_PROXY_CAND_MAX][8];
@@ -49,7 +51,7 @@ private:
 
 public:
     Editor() : screen(nullptr), textarea(nullptr), ime(nullptr),
-               keyboard(nullptr), ime_container(nullptr), ime_cand_proxy(nullptr), ime_cand_src(nullptr), ime_btn(nullptr), title_label(nullptr),
+               keyboard(nullptr), ime_container(nullptr), ime_cand_proxy(nullptr), ime_cand_src(nullptr), ime_btn(nullptr), title_wrap(nullptr), title_label(nullptr), top_btn(nullptr),
                save_popup(nullptr), save_popup_timer(nullptr),
                ime_cand_syncing(false), ime_is_k9_mode(false), ime_cand_count(0), ime_cand_page(0),
                ime_visible(false), ime_font_acquired(false), ime_cursor_anchor_pos(0), ime_cursor_anchor_valid(false),
@@ -105,23 +107,27 @@ public:
         lv_obj_set_style_text_color(exit_label, lv_color_hex(0xFFFFFF), 0);
         lv_obj_center(exit_label);
 
-        lv_obj_t* center_wrap = lv_obj_create(toolbar);
-        lv_obj_set_flex_grow(center_wrap, 1);
-        lv_obj_set_height(center_wrap, lv_pct(100));
-        lv_obj_set_flex_flow(center_wrap, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(center_wrap, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_bg_opa(center_wrap, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(center_wrap, 0, 0);
-        lv_obj_set_style_pad_all(center_wrap, 0, 0);
-        lv_obj_clear_flag(center_wrap, LV_OBJ_FLAG_SCROLLABLE);
+        title_wrap = lv_obj_create(toolbar);
+        lv_obj_set_flex_grow(title_wrap, 1);
+        lv_obj_set_height(title_wrap, lv_pct(100));
+        lv_obj_set_flex_flow(title_wrap, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(title_wrap, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_bg_opa(title_wrap, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(title_wrap, 0, 0);
+        lv_obj_set_style_pad_all(title_wrap, 0, 0);
+        lv_obj_set_scroll_dir(title_wrap, LV_DIR_HOR);
+        lv_obj_set_scrollbar_mode(title_wrap, LV_SCROLLBAR_MODE_OFF);
+        lv_obj_add_flag(title_wrap, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(title_wrap, LV_OBJ_FLAG_SCROLL_MOMENTUM);
+        lv_obj_add_flag(title_wrap, LV_OBJ_FLAG_SCROLL_ELASTIC);
 
-        title_label = lv_label_create(center_wrap);
+        title_label = lv_label_create(title_wrap);
         lv_label_set_text(title_label, "Editor");
         lv_obj_set_style_text_color(title_label, lv_color_hex(0xFFFFFF), 0);
         lv_obj_set_style_text_font(title_label, FontManager::textFont(), 0);
-        lv_label_set_long_mode(title_label, LV_LABEL_LONG_DOT);
-        lv_obj_set_width(title_label, lv_pct(100));
-        lv_obj_set_style_text_align(title_label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(title_label, LV_LABEL_LONG_CLIP);
+        lv_obj_set_width(title_label, LV_SIZE_CONTENT);
+        lv_obj_set_style_text_align(title_label, LV_TEXT_ALIGN_LEFT, 0);
 
         lv_obj_t* right_wrap = lv_obj_create(toolbar);
         lv_obj_set_size(right_wrap, LV_SIZE_CONTENT, lv_pct(100));
@@ -131,6 +137,16 @@ public:
         lv_obj_set_style_pad_all(right_wrap, 0, 0);
         lv_obj_set_style_pad_column(right_wrap, 2, 0);
         lv_obj_clear_flag(right_wrap, LV_OBJ_FLAG_SCROLLABLE);
+
+        top_btn = lv_btn_create(right_wrap);
+        lv_obj_set_size(top_btn, 28, 26);
+        styleActionButton(top_btn);
+        lv_obj_add_event_cb(top_btn, top_btn_event_cb, LV_EVENT_CLICKED, this);
+        lv_obj_t* top_label = lv_label_create(top_btn);
+        lv_label_set_text(top_label, LV_SYMBOL_UP);
+        lv_obj_set_style_text_font(top_label, FontManager::iconFont(), 0);
+        lv_obj_set_style_text_color(top_label, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_center(top_label);
 
         lv_obj_t* save_btn = lv_btn_create(right_wrap);
         lv_obj_set_size(save_btn, 28, 26);
@@ -275,7 +291,9 @@ public:
             ime_cand_proxy = nullptr;
             ime_cand_src = nullptr;
             ime_btn = nullptr;
+            title_wrap = nullptr;
             title_label = nullptr;
+            top_btn = nullptr;
         }
     }
 
@@ -295,7 +313,9 @@ public:
     }
 
     void setText(const String& content) {
-        if (textarea) lv_textarea_set_text(textarea, content.c_str());
+        if (!textarea) return;
+        lv_textarea_set_text(textarea, content.c_str());
+        moveCursorAndViewToStart();
     }
 
     String getText() {
@@ -310,6 +330,7 @@ public:
         String name = (idx >= 0 && idx < (int)filename.length() - 1) ? filename.substring(idx + 1) : filename;
         if (name.length() == 0) name = "Editor";
         lv_label_set_text(title_label, name.c_str());
+        if (title_wrap) lv_obj_scroll_to_x(title_wrap, 0, LV_ANIM_OFF);
     }
 
     String getTitle() const {
@@ -483,6 +504,27 @@ private:
         if (ed->on_save_cb) {
             ed->on_save_cb();
         }
+    }
+
+    static void top_btn_event_cb(lv_event_t* e) {
+        Editor* ed = (Editor*)lv_event_get_user_data(e);
+        if (!ed) return;
+        ed->moveCursorAndViewToStart();
+    }
+
+    static void async_scroll_top_cb(void* user_data) {
+        Editor* ed = (Editor*)user_data;
+        if (!ed || !ed->textarea) return;
+        lv_obj_scroll_to_y(ed->textarea, 0, LV_ANIM_OFF);
+    }
+
+    void moveCursorAndViewToStart() {
+        if (!textarea) return;
+        lv_textarea_set_cursor_pos(textarea, 0);
+        lv_obj_scroll_to_y(textarea, 0, LV_ANIM_OFF);
+        ime_cursor_anchor_pos = 0;
+        ime_cursor_anchor_valid = true;
+        lv_async_call(async_scroll_top_cb, this);
     }
 
 };

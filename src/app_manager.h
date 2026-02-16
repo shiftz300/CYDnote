@@ -8,6 +8,7 @@
 #include <algorithm>
 #include "config.h"
 #include "utils/sd_helper.h"
+#include "utils/ap_share_service.h"
 
 // For readability in AppManager context
 using SDHelper = StorageHelper;
@@ -27,6 +28,7 @@ private:
     ImageViewer image_viewer;
     MenuManager menu_manager;
     SDHelper* sd_helper;
+    ApShareService ap_share;
     String current_filename;
     std::vector<String> image_gallery;
     int image_index;
@@ -43,13 +45,20 @@ public:
         sd_helper = SDHelper::getInstance();
         bool sd_ok = sd_helper && sd_helper->begin();
         if (!sd_ok) Serial.println("[SD] unavailable, D: disabled");
+        ap_share.init(sd_helper);
         
         // Create UI components
-        file_manager.create(sd_ok, [this](const char* name){
-            String path = String(name ? name : "");
-            if (isImageFile(path)) this->showImage(path);
-            else this->showEditor(path);
-        });
+        file_manager.create(
+            sd_ok,
+            [this](const char* name){
+                String path = String(name ? name : "");
+                if (isImageFile(path)) this->showImage(path);
+                else this->showEditor(path);
+            },
+            [this]() -> bool { return this->ap_share.toggle(); },
+            [this]() -> bool { return this->ap_share.isRunning(); },
+            [this]() -> String { return this->ap_share.statusString(); }
+        );
         editor.create([this](){ this->showFileManager(); }, [this](){ this->handleSave(); });
         image_viewer.create(
             [this](){ this->showFileManager(); },
@@ -109,6 +118,7 @@ public:
     }
     
     void update() {
+        ap_share.update();
         // Check menu actions
         MenuAction action = menu_manager.getLastAction();
         if (action != MENU_NONE) {
@@ -124,9 +134,6 @@ public:
                     break;
                 case MENU_SERVE_AP:
                     handleServeAP();
-                    break;
-                case MENU_SERVE_BT:
-                    handleServeBT();
                     break;
                 case MENU_EXIT:
                     handleExit();
@@ -169,12 +176,8 @@ public:
     }
     
     void handleServeAP() {
-        Serial.println("AP server not yet implemented");
-        menu_manager.toggle();
-    }
-    
-    void handleServeBT() {
-        Serial.println("BT server not yet implemented");
+        bool running = toggleShareApService();
+        Serial.println(running ? "[ShareAP] started" : "[ShareAP] stopped");
         menu_manager.toggle();
     }
     
@@ -286,6 +289,14 @@ private:
             snprintf(buf, sizeof(buf), "%llu B", (unsigned long long)bytes);
         }
         return String(buf);
+    }
+
+    bool toggleShareApService() {
+        return ap_share.toggle();
+    }
+
+    String shareApStatusString() const {
+        return ap_share.statusString();
     }
 
     char driveOf(const String& vpath) const {
