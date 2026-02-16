@@ -5,11 +5,12 @@
 #include <LittleFS.h>
 #include <functional>
 #include <vector>
+#include <cctype>
+#include <string.h>
 #include <lvgl.h>
 #include "../utils/sd_helper.h"
 #include "font_manager.h"
 #include "../ime/custom_pinyin_dict_plus.h"
-#include "../ime/ime_mru.h"
 
 class FileManager {
 private:
@@ -17,10 +18,11 @@ private:
     static constexpr uint16_t IME_SLIDE_IN_MS = 90;
     static constexpr uint16_t IME_SLIDE_OUT_MS = 80;
     static constexpr int32_t DIALOG_LIFT_Y = -84;
-    static constexpr int32_t IME_CANDIDATE_H = 64;
+    static constexpr int32_t IME_CANDIDATE_H = 28;
     static constexpr int32_t IME_KEYBOARD_H = 132;
     static constexpr int32_t INPUT_TEXT_SIZE_PX = 14;
     static constexpr int32_t IME_TOTAL_H_FALLBACK = IME_CANDIDATE_H + IME_KEYBOARD_H;
+    static constexpr uint8_t IME_PROXY_CAND_MAX = 20;
     static constexpr size_t COPY_IO_CHUNK = 24576;
     static constexpr uint8_t COPY_CHUNKS_PER_TICK = 12;
     enum DialogMode {
@@ -40,6 +42,10 @@ private:
 
     struct CrumbMeta {
         String path;
+    };
+    struct FileListItem {
+        String name;
+        bool is_dir;
     };
 
     lv_obj_t* screen;
@@ -78,9 +84,15 @@ private:
     lv_obj_t* dialog_ime_container;
     lv_obj_t* dialog_ime;
     lv_obj_t* dialog_keyboard;
+    lv_obj_t* dialog_ime_cand_proxy;
+    lv_obj_t* dialog_ime_cand_src;
     lv_obj_t* dialog_new_file_btn;
     lv_obj_t* dialog_new_dir_btn;
     bool dialog_ime_font_acquired;
+    char dialog_ime_cand_texts[IME_PROXY_CAND_MAX][8];
+    const char* dialog_ime_cand_map[IME_PROXY_CAND_MAX + 1];
+    uint8_t dialog_ime_cand_src_idx[IME_PROXY_CAND_MAX];
+    bool dialog_ime_cand_syncing;
     std::function<void(const char*)> on_open_cb;
 
     bool sd_ready;
@@ -101,17 +113,24 @@ private:
     bool fs_usage_last_valid;
     bool list_suspended_for_dialog;
     bool reset_scroll_pending;
+    uint32_t dialog_ime_cursor_anchor_pos;
+    bool dialog_ime_cursor_anchor_valid;
 
 public:
     FileManager()
         : screen(nullptr), sidebar(nullptr), breadcrumb_wrap(nullptr), file_list(nullptr),
           empty_label(nullptr), fs_bar(nullptr), fs_label(nullptr), fs_panel(nullptr), up_btn_ref(nullptr), drive_btn_l(nullptr), drive_btn_d(nullptr), menu_panel(nullptr), menu_copy_btn(nullptr), menu_paste_btn(nullptr), menu_paste_label(nullptr), menu_paste_progress_track(nullptr), menu_paste_progress_bg(nullptr), menu_copy_cancel_btn(nullptr), menu_copy_cancel_label(nullptr), copy_timer(nullptr), copy_src_drive('L'), copy_dst_drive('L'), copy_src_inner(""), copy_dst_inner(""), copy_total_bytes(0), copy_done_bytes(0), dialog_box(nullptr), dialog_input(nullptr),
-          dialog_ime_container(nullptr), dialog_ime(nullptr), dialog_keyboard(nullptr),
+          dialog_ime_container(nullptr), dialog_ime(nullptr), dialog_keyboard(nullptr), dialog_ime_cand_proxy(nullptr), dialog_ime_cand_src(nullptr),
           dialog_new_file_btn(nullptr), dialog_new_dir_btn(nullptr),
-          dialog_ime_font_acquired(false),
+          dialog_ime_font_acquired(false), dialog_ime_cand_syncing(false),
           on_open_cb(nullptr), sd_ready(false), remove_mode(false), copy_pick_mode(false), active_drive('L'),
           current_path("/"), selected_vpath(""), copied_vpath(""), pending_open_vpath(""), new_as_dir(false), copy_cancel_requested(false), copy_in_progress(false), copy_started_ms(0), dialog_mode(DIALOG_NONE),
-          fs_usage_last_ms(0), fs_usage_last_pct(0), fs_usage_last_valid(false), list_suspended_for_dialog(false), reset_scroll_pending(true) {}
+          fs_usage_last_ms(0), fs_usage_last_pct(0), fs_usage_last_valid(false), list_suspended_for_dialog(false), reset_scroll_pending(true),
+          dialog_ime_cursor_anchor_pos(0), dialog_ime_cursor_anchor_valid(false) {
+        memset(dialog_ime_cand_texts, 0, sizeof(dialog_ime_cand_texts));
+        memset(dialog_ime_cand_map, 0, sizeof(dialog_ime_cand_map));
+        memset(dialog_ime_cand_src_idx, 0xFF, sizeof(dialog_ime_cand_src_idx));
+    }
 
     void create(bool has_sd, std::function<void(const char*)> on_open = nullptr) {
         on_open_cb = on_open;
@@ -317,6 +336,7 @@ public:
         menu_copy_cancel_label = lv_obj_get_child(menu_copy_cancel_btn, 0);
         lv_obj_add_flag(menu_copy_cancel_btn, LV_OBJ_FLAG_HIDDEN);
         addMenuAction(menu_panel, LV_SYMBOL_EDIT " Rename", menu_rename_event_cb);
+        addMenuAction(menu_panel, LV_SYMBOL_SETTINGS " Info", menu_info_event_cb);
         lv_obj_add_flag(menu_panel, LV_OBJ_FLAG_HIDDEN);
         updateMenuActionStates();
 
@@ -353,6 +373,8 @@ public:
             dialog_ime_container = nullptr;
             dialog_ime = nullptr;
             dialog_keyboard = nullptr;
+            dialog_ime_cand_proxy = nullptr;
+            dialog_ime_cand_src = nullptr;
             dialog_ime_font_acquired = false;
         }
     }
@@ -543,6 +565,15 @@ private:
         fm->copy_cancel_requested = true;
     }
 
+    static void menu_info_event_cb(lv_event_t* e) {
+        FileManager* fm = (FileManager*)lv_event_get_user_data(e);
+        if (!fm) return;
+        fm->exitRemoveModeIfNeeded(true);
+        fm->exitCopyPickModeIfNeeded(false);
+        if (fm->selected_vpath.length() == 0) return;
+        fm->openEntryInfoDialog(fm->selected_vpath);
+    }
+
     static void copy_timer_cb(lv_timer_t* t) {
         FileManager* fm = (FileManager*)lv_timer_get_user_data(t);
         if (!fm) return;
@@ -601,6 +632,8 @@ private:
         fm->dialog_ime_container = nullptr;
         fm->dialog_ime = nullptr;
         fm->dialog_keyboard = nullptr;
+        fm->dialog_ime_cand_proxy = nullptr;
+        fm->dialog_ime_cand_src = nullptr;
         fm->releaseDialogIMEFont();
     }
 
@@ -636,21 +669,11 @@ private:
         fm->updateNewTypeButtons();
     }
 
-    static void dialog_ime_keyboard_mru_event_cb(lv_event_t* e) {
+    static void dialog_input_cursor_anchor_event_cb(lv_event_t* e) {
         FileManager* fm = (FileManager*)lv_event_get_user_data(e);
-        if (!fm || !fm->dialog_ime) return;
-        lv_obj_t* cand_panel = lv_ime_pinyin_get_cand_panel(fm->dialog_ime);
-        ImeMru::getInstance().applyToCandidatePanel(cand_panel);
-    }
-
-    static void dialog_ime_cand_mru_event_cb(lv_event_t* e) {
-        FileManager* fm = (FileManager*)lv_event_get_user_data(e);
-        lv_obj_t* panel = (lv_obj_t*)lv_event_get_target(e);
-        if (!fm || !panel) return;
-        uint32_t id = lv_buttonmatrix_get_selected_button(panel);
-        const char* txt = lv_buttonmatrix_get_button_text(panel, id);
-        ImeMru::getInstance().learnFromUtf8(txt);
-        ImeMru::getInstance().applyToCandidatePanel(panel);
+        if (!fm || !fm->dialog_input) return;
+        fm->dialog_ime_cursor_anchor_pos = lv_textarea_get_cursor_pos(fm->dialog_input);
+        fm->dialog_ime_cursor_anchor_valid = true;
     }
 
     void createDriveButton(const char* label, char drive, bool enabled) {
@@ -830,21 +853,28 @@ private:
             lv_label_set_text(empty_label, "(invalid path)");
             return false;
         }
-        bool has_items = false;
+        std::vector<FileListItem> items;
+        items.reserve(64);
         uint32_t iter = 0;
         while (true) {
             File entry = dir.openNextFile();
             if (!entry) break;
             String name = baseName(entry.name());
             if (name.length() > 0) {
-                addEntryButton(name, entry.isDirectory());
-                has_items = true;
+                FileListItem it;
+                it.name = name;
+                it.is_dir = entry.isDirectory();
+                items.push_back(it);
             }
             entry.close();
             if ((++iter & 0x0F) == 0) delay(0);
         }
         dir.close();
-        return has_items;
+        sortEntryItems(items);
+        for (size_t i = 0; i < items.size(); i++) {
+            addEntryButton(items[i].name, items[i].is_dir);
+        }
+        return !items.empty();
     }
 
     bool loadSdEntries() {
@@ -857,21 +887,62 @@ private:
             lv_label_set_text(empty_label, "(invalid path)");
             return false;
         }
-        bool has_items = false;
+        std::vector<FileListItem> items;
+        items.reserve(64);
         uint32_t iter = 0;
         FsFile entry;
         while (entry.openNext(&dir, O_RDONLY)) {
             char name[256];
             entry.getName(name, sizeof(name));
             if (name[0] != '\0') {
-                addEntryButton(String(name), entry.isDir());
-                has_items = true;
+                FileListItem it;
+                it.name = String(name);
+                it.is_dir = entry.isDir();
+                items.push_back(it);
             }
             entry.close();
             if ((++iter & 0x0F) == 0) delay(0);
         }
         dir.close();
-        return has_items;
+        sortEntryItems(items);
+        for (size_t i = 0; i < items.size(); i++) {
+            addEntryButton(items[i].name, items[i].is_dir);
+        }
+        return !items.empty();
+    }
+
+    static uint8_t sortRankChar(uint8_t c) {
+        if (c >= '0' && c <= '9') return 0;
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) return 1;
+        if (c < 0x80) return 2;   // ASCII symbols
+        return 3;                 // non-ASCII bytes (UTF-8)
+    }
+
+    static bool lessName09az(const String& a, const String& b) {
+        const size_t la = a.length();
+        const size_t lb = b.length();
+        const size_t n = (la < lb) ? la : lb;
+        for (size_t i = 0; i < n; i++) {
+            uint8_t ca = (uint8_t)a.charAt((unsigned int)i);
+            uint8_t cb = (uint8_t)b.charAt((unsigned int)i);
+            uint8_t ra = sortRankChar(ca);
+            uint8_t rb = sortRankChar(cb);
+            if (ra != rb) return ra < rb;
+
+            if (ra == 1) { // letters: case-insensitive compare
+                ca = (uint8_t)tolower((int)ca);
+                cb = (uint8_t)tolower((int)cb);
+            }
+            if (ca != cb) return ca < cb;
+        }
+        return la < lb;
+    }
+
+    static void sortEntryItems(std::vector<FileListItem>& items) {
+        std::sort(items.begin(), items.end(), [](const FileListItem& a, const FileListItem& b) {
+            if (a.is_dir != b.is_dir) return a.is_dir && !b.is_dir; // folders first, then files
+            return lessName09az(a.name, b.name);
+        });
     }
 
     void addEntryButton(const String& name, bool is_dir) {
@@ -1142,6 +1213,10 @@ private:
         lv_obj_set_style_height(dialog_input, dialog_cursor_h, LV_PART_CURSOR);
         lv_obj_add_event_cb(dialog_input, dialog_input_event_cb, LV_EVENT_FOCUSED, this);
         lv_obj_add_event_cb(dialog_input, dialog_input_event_cb, LV_EVENT_CLICKED, this);
+        lv_obj_add_event_cb(dialog_input, dialog_input_cursor_anchor_event_cb, LV_EVENT_CLICKED, this);
+        lv_obj_add_event_cb(dialog_input, dialog_input_cursor_anchor_event_cb, LV_EVENT_VALUE_CHANGED, this);
+        dialog_ime_cursor_anchor_pos = lv_textarea_get_cursor_pos(dialog_input);
+        dialog_ime_cursor_anchor_valid = true;
 
         lv_obj_t* row = lv_obj_create(dialog_box);
         lv_obj_remove_style_all(row);
@@ -1253,21 +1328,23 @@ private:
         lv_ime_pinyin_set_keyboard(dialog_ime, dialog_keyboard);
         lv_ime_pinyin_set_dict(dialog_ime, g_pinyin_dict_plus);
         lv_ime_pinyin_set_mode(dialog_ime, LV_IME_PINYIN_MODE_K26);
-        ImeMru::getInstance().init();
         lv_obj_t* cand_panel = lv_ime_pinyin_get_cand_panel(dialog_ime);
-        lv_obj_add_event_cb(dialog_keyboard, dialog_ime_keyboard_mru_event_cb, LV_EVENT_VALUE_CHANGED, this);
         if (cand_panel) {
             lv_obj_set_style_bg_color(cand_panel, lv_color_hex(0x000000), LV_PART_MAIN);
             lv_obj_set_style_bg_color(cand_panel, lv_color_hex(0x111111), LV_PART_ITEMS | LV_STATE_DEFAULT);
             lv_obj_set_style_bg_color(cand_panel, lv_color_hex(0x1A1A1A), LV_PART_ITEMS | LV_STATE_FOCUSED);
             lv_obj_set_style_bg_color(cand_panel, lv_color_hex(0x202020), LV_PART_ITEMS | LV_STATE_PRESSED);
             lv_obj_set_style_bg_color(cand_panel, lv_color_hex(0x151515), LV_PART_ITEMS | LV_STATE_CHECKED);
+            lv_obj_set_style_bg_opa(cand_panel, LV_OPA_TRANSP, LV_PART_MAIN);
+            lv_obj_set_style_bg_opa(cand_panel, LV_OPA_TRANSP, LV_PART_ITEMS);
+            lv_obj_set_style_border_width(cand_panel, 0, LV_PART_MAIN);
+            lv_obj_set_style_border_width(cand_panel, 0, LV_PART_ITEMS);
             lv_obj_set_style_text_color(cand_panel, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
             lv_obj_set_style_text_color(cand_panel, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_DEFAULT);
             lv_obj_set_style_text_color(cand_panel, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_FOCUSED);
             lv_obj_set_style_text_color(cand_panel, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_PRESSED);
             lv_obj_set_style_text_color(cand_panel, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_CHECKED);
-            lv_obj_add_event_cb(cand_panel, dialog_ime_cand_mru_event_cb, LV_EVENT_VALUE_CHANGED, this);
+            dialog_ime_cand_src = cand_panel;
         }
 
         lv_obj_add_state(dialog_input, LV_STATE_FOCUSED);
@@ -1398,6 +1475,81 @@ private:
         lv_label_set_long_mode(txt, LV_LABEL_LONG_WRAP);
         lv_obj_set_width(txt, lv_pct(100));
         lv_obj_set_style_text_font(txt, FontManager::iconFont(), 0);
+        lv_obj_set_style_text_color(txt, lv_color_hex(0xD0E6FF), 0);
+
+        lv_obj_t* row = lv_obj_create(dialog_box);
+        lv_obj_remove_style_all(row);
+        lv_obj_set_width(row, lv_pct(100));
+        lv_obj_set_height(row, 36);
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_bg_color(row, lv_color_hex(0x000000), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(row, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_width(row, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_left(row, 2, LV_PART_MAIN);
+        lv_obj_set_style_pad_right(row, 2, LV_PART_MAIN);
+        lv_obj_set_style_pad_top(row, 1, LV_PART_MAIN);
+        lv_obj_set_style_pad_bottom(row, 1, LV_PART_MAIN);
+        lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t* ok = lv_button_create(row);
+        lv_obj_set_size(ok, 56, 28);
+        styleActionButton(ok);
+        lv_obj_add_event_cb(ok, dialog_cancel_event_cb, LV_EVENT_CLICKED, this);
+        lv_obj_t* ok_lbl = lv_label_create(ok);
+        lv_label_set_text(ok_lbl, "OK");
+        lv_obj_center(ok_lbl);
+    }
+
+    void openEntryInfoDialog(const String& vpath) {
+        closeMenuPanel();
+        closeDialog();
+
+        bool is_dir = false;
+        uint32_t file_count = 0;
+        uint64_t file_size = 0;
+        if (!getEntryInfo(vpath, is_dir, file_count, file_size)) return;
+
+        dialog_box = lv_obj_create(screen);
+        lv_obj_add_flag(dialog_box, LV_OBJ_FLAG_FLOATING);
+        lv_obj_add_flag(dialog_box, LV_OBJ_FLAG_IGNORE_LAYOUT);
+        lv_obj_set_width(dialog_box, 198);
+        lv_obj_set_height(dialog_box, LV_SIZE_CONTENT);
+        lv_obj_center(dialog_box);
+        lv_obj_set_style_bg_color(dialog_box, lv_color_hex(0x000000), 0);
+        lv_obj_set_style_border_color(dialog_box, lv_color_hex(0x505050), 0);
+        lv_obj_set_style_pad_all(dialog_box, 6, 0);
+        lv_obj_set_style_pad_row(dialog_box, 4, 0);
+        lv_obj_set_flex_flow(dialog_box, LV_FLEX_FLOW_COLUMN);
+        lv_obj_clear_flag(dialog_box, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t* title = lv_label_create(dialog_box);
+        lv_label_set_text(title, "Info");
+        lv_obj_set_style_text_font(title, FontManager::textFont(), 0);
+        lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
+
+        char info[256];
+        if (is_dir) {
+            lv_snprintf(
+                info, sizeof(info),
+                "Name: %s\nFiles: %u",
+                baseName(innerPath(vpath)).c_str(),
+                (unsigned)file_count
+            );
+        } else {
+            lv_snprintf(
+                info, sizeof(info),
+                "Name: %s\nSize: %s",
+                baseName(innerPath(vpath)).c_str(),
+                formatBytesHuman(file_size).c_str()
+            );
+        }
+
+        lv_obj_t* txt = lv_label_create(dialog_box);
+        lv_label_set_text(txt, info);
+        lv_label_set_long_mode(txt, LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(txt, lv_pct(100));
+        lv_obj_set_style_text_font(txt, FontManager::textFont(), 0);
         lv_obj_set_style_text_color(txt, lv_color_hex(0xD0E6FF), 0);
 
         lv_obj_t* row = lv_obj_create(dialog_box);
@@ -2247,6 +2399,56 @@ private:
             return sz;
         }
         return 0;
+    }
+
+    bool getEntryInfo(const String& vpath, bool& is_dir, uint32_t& file_count, uint64_t& file_size) {
+        is_dir = false;
+        file_count = 0;
+        file_size = 0;
+        char d = driveOf(vpath);
+        String p = innerPath(vpath);
+
+        if (d == 'L') {
+            File node = LittleFS.open(p.c_str(), "r");
+            if (!node) return false;
+            is_dir = node.isDirectory();
+            if (!is_dir) {
+                file_size = (uint64_t)node.size();
+                node.close();
+                return true;
+            }
+            uint32_t iter = 0;
+            while (true) {
+                File e = node.openNextFile();
+                if (!e) break;
+                if (!e.isDirectory()) file_count++;
+                e.close();
+                if ((++iter & 0x0F) == 0) delay(0);
+            }
+            node.close();
+            return true;
+        }
+
+        if (d == 'D' && sd_ready && StorageHelper::getInstance()->isInitialized()) {
+            FsFile node = StorageHelper::getInstance()->getFs().open(p.c_str(), O_RDONLY);
+            if (!node) return false;
+            is_dir = node.isDir();
+            if (!is_dir) {
+                file_size = (uint64_t)node.fileSize();
+                node.close();
+                return true;
+            }
+            uint32_t iter = 0;
+            FsFile e;
+            while (e.openNext(&node, O_RDONLY)) {
+                if (!e.isDir()) file_count++;
+                e.close();
+                if ((++iter & 0x0F) == 0) delay(0);
+            }
+            node.close();
+            return true;
+        }
+        return false;
     }
 
     String appendIndexToName(const String& name, int idx) const {

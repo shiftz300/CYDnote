@@ -952,12 +952,12 @@
     #define LV_IME_PINYIN_USE_DEFAULT_DICT 0
     /*Set the maximum number of candidate panels that can be displayed*/
     /*This needs to be adjusted according to the size of the screen*/
-    #define LV_IME_PINYIN_CAND_TEXT_NUM 8
+    #define LV_IME_PINYIN_CAND_TEXT_NUM 10
 
     /*Use 9 key input(k9)*/
     #define LV_IME_PINYIN_USE_K9_MODE      1
     #if LV_IME_PINYIN_USE_K9_MODE == 1
-        #define LV_IME_PINYIN_K9_CAND_TEXT_NUM 4
+        #define LV_IME_PINYIN_K9_CAND_TEXT_NUM 5
     #endif /*LV_IME_PINYIN_USE_K9_MODE*/
 #endif
 

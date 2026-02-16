@@ -25,6 +25,16 @@
 // Backlight / status LED
 #define TFT_BACKLIGHT_PIN 21
 #define TFT_BACKLIGHT_ON_LEVEL HIGH
+// Some ESP32-2432S028R variants route backlight to GPIO27.
+// Set to -1 to disable mirror output.
+#ifndef TFT_BACKLIGHT_PIN_ALT
+#define TFT_BACKLIGHT_PIN_ALT 27
+#endif
+
+// Ambient light sensor (LDR/CDS). Can be overridden by build flags.
+#ifndef CDS
+#define CDS 34
+#endif
 // Set to -1 to disable status LED support.
 #define STATUS_LED_PIN -1
 #define STATUS_LED_ON_LEVEL HIGH

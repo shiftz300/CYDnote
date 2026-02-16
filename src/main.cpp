@@ -5,6 +5,7 @@
 #include <LittleFS.h>
 #include <esp_littlefs.h>
 #include <esp_heap_caps.h>
+#include <math.h>
 
 // include the installed LVGL- Light and Versatile Graphics Library - https://github.com/lvgl/lvgl
 #include <lvgl.h>
@@ -58,6 +59,125 @@ static uint8_t* draw_buf_1 = nullptr;
 static uint8_t* draw_buf_2 = nullptr;
 static bool fs_mount_ok = false;
 static bool lv_sd_fs_registered = false;
+
+#if defined(CDS)
+#define AMBIENT_LIGHT_PIN CDS
+#else
+#define AMBIENT_LIGHT_PIN -1
+#endif
+
+// Auto backlight (CDS/LDR -> TFT backlight PWM)
+static const uint8_t BL_MIN_PCT = 25;                // keep minimum readable brightness
+static const uint8_t BL_MAX_PCT = 85;                // keep headroom so change is visible
+static const uint32_t CDS_SAMPLE_MS = 70;            // smoother response
+static const float BL_SMOOTH_ALPHA = 0.22f;          // less jumpy
+static const float BL_GAMMA = 1.8f;                  // bright-zone curve
+static const bool CDS_INVERT = true;                 // light -> brighter
+static const float BL_MAX_STEP_PCT = 2.0f;           // max brightness step per sample
+static const float BL_DARK_ZONE = 0.35f;             // 0..35% ambient treated as dark zone
+static const float BL_DARK_GAIN = 0.12f;             // dark zone uses only 12% of total range
+static const float BL_ULTRA_DARK_ZONE = 0.10f;       // first 10%: extra compressed
+static const float BL_ULTRA_DARK_GAIN = 0.05f;       // first 10% uses only 2% of range
+static const float BL_DARK_HYSTERESIS_PCT = 1.0f;    // low-light anti-flicker deadband
+
+static bool backlight_pwm_ready = false;
+static bool backlight_pwm_alt_ready = false;
+static float bl_smoothed_pct = (float)BL_MAX_PCT;
+static uint32_t bl_last_sample_ms = 0;
+static int cds_obs_min = 4095;
+static int cds_obs_max = 0;
+
+static inline void backlightWritePct(uint8_t pct) {
+  if (pct < BL_MIN_PCT) pct = BL_MIN_PCT;
+  if (pct > BL_MAX_PCT) pct = BL_MAX_PCT;
+  uint8_t duty = (uint8_t)((uint32_t)pct * 255U / 100U);
+  if (TFT_BACKLIGHT_ON_LEVEL != HIGH) duty = 255U - duty;
+  analogWrite(TFT_BACKLIGHT_PIN, duty);
+  if (backlight_pwm_alt_ready) analogWrite(TFT_BACKLIGHT_PIN_ALT, duty);
+}
+
+static void backlightInit() {
+  pinMode(TFT_BACKLIGHT_PIN, OUTPUT);
+  backlight_pwm_ready = true;
+#if TFT_BACKLIGHT_PIN_ALT >= 0
+  if (TFT_BACKLIGHT_PIN_ALT != TFT_BACKLIGHT_PIN) {
+    pinMode(TFT_BACKLIGHT_PIN_ALT, OUTPUT);
+    backlight_pwm_alt_ready = true;
+  }
+#endif
+  backlightWritePct(BL_MAX_PCT);
+
+#if AMBIENT_LIGHT_PIN >= 0
+  pinMode(AMBIENT_LIGHT_PIN, INPUT);
+  analogReadResolution(12);
+  analogSetPinAttenuation(AMBIENT_LIGHT_PIN, ADC_11db);
+#endif
+}
+
+static void backlightAutoUpdate() {
+  if (!backlight_pwm_ready) return;
+#if AMBIENT_LIGHT_PIN < 0
+  return;
+#else
+  uint32_t now = millis();
+  if (now - bl_last_sample_ms < CDS_SAMPLE_MS) return;
+  bl_last_sample_ms = now;
+
+  int raw = analogRead(AMBIENT_LIGHT_PIN);
+  if (raw < 0) return;
+  if (CDS_INVERT) raw = 4095 - raw;
+
+  // Sliding observation window so brightness reacts to "current environment",
+  // not old extreme values from minutes ago.
+  if (raw < cds_obs_min) cds_obs_min = raw;
+  else if (cds_obs_min < 4095) cds_obs_min++;
+
+  if (raw > cds_obs_max) cds_obs_max = raw;
+  else if (cds_obs_max > 0) cds_obs_max--;
+
+  int span = cds_obs_max - cds_obs_min;
+  float t = 0.0f;
+  if (span >= 20) {
+    t = (float)(raw - cds_obs_min) / (float)span;
+  } else {
+    // Not enough ambient variation yet; fallback to full-range rough mapping.
+    t = (float)raw / 4095.0f;
+  }
+  if (t < 0.0f) t = 0.0f;
+  if (t > 1.0f) t = 1.0f;
+
+  float span_pct = (float)(BL_MAX_PCT - BL_MIN_PCT);
+  float target_pct = (float)BL_MIN_PCT;
+  if (t <= BL_ULTRA_DARK_ZONE) {
+    // First 10%: heavily compressed to avoid visible jumps in near-dark.
+    float tu = t / BL_ULTRA_DARK_ZONE;         // 0..1
+    float yu = tu * tu;                         // flatten near zero
+    target_pct += yu * (span_pct * BL_ULTRA_DARK_GAIN);
+  } else if (t <= BL_DARK_ZONE) {
+    // Compress dark region: ambient changes have very small brightness impact.
+    float td = (t - BL_ULTRA_DARK_ZONE) / (BL_DARK_ZONE - BL_ULTRA_DARK_ZONE); // 0..1
+    float yd = td * td;
+    target_pct += (span_pct * BL_ULTRA_DARK_GAIN) +
+                  yd * (span_pct * (BL_DARK_GAIN - BL_ULTRA_DARK_GAIN));
+  } else {
+    // Above dark zone: use remaining range with smooth non-linear growth.
+    float tb = (t - BL_DARK_ZONE) / (1.0f - BL_DARK_ZONE); // 0..1
+    float yb = powf(tb, BL_GAMMA);
+    target_pct += (span_pct * BL_DARK_GAIN) + yb * (span_pct * (1.0f - BL_DARK_GAIN));
+  }
+
+  // Low-light anti-flicker: ignore tiny brightness changes in dark zone.
+  if (t <= BL_DARK_ZONE && fabsf(target_pct - bl_smoothed_pct) < BL_DARK_HYSTERESIS_PCT) {
+    return;
+  }
+  float delta = (target_pct - bl_smoothed_pct) * BL_SMOOTH_ALPHA;
+  if (delta > BL_MAX_STEP_PCT) delta = BL_MAX_STEP_PCT;
+  if (delta < -BL_MAX_STEP_PCT) delta = -BL_MAX_STEP_PCT;
+  bl_smoothed_pct += delta;
+  int final_pct = (int)(bl_smoothed_pct + 0.5f);
+  backlightWritePct((uint8_t)final_pct);
+#endif
+}
 
 typedef struct {
   FsFile file;
@@ -324,8 +444,7 @@ void setup() {
   // Start LVGL
   lv_init();
 
-  pinMode(TFT_BACKLIGHT_PIN, OUTPUT);
-  digitalWrite(TFT_BACKLIGHT_PIN, TFT_BACKLIGHT_ON_LEVEL);
+  backlightInit();
   statusLedInit();
   statusLedSetState(LED_BOOTING);
   
@@ -401,6 +520,6 @@ void loop() {
   else if (app && app->isBusy()) statusLedSetState(LED_BUSY);
   else statusLedSetState(LED_READY);
   statusLedUpdate();
+  backlightAutoUpdate();
   delay(0);              // keep yielding without adding an extra 1ms frame stall
 }
-

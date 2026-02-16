@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <lvgl.h>
-#include "../fonts/font_provider.h"
+#include "../font/font_provider.h"
 
 class FontManager {
 private:

@@ -3,36 +3,63 @@
 
 #include <lvgl.h>
 #include <functional>
+#include <string.h>
 #include "../config.h"
 #include "font_manager.h"
 #include "../ime/custom_pinyin_dict_plus.h"
-#include "../ime/ime_mru.h"
 
 class Editor {
 private:
     static constexpr int32_t SCREEN_TRANSITION_MS = 55;
     static constexpr int32_t IME_ANIM_TIME_MS = 90;
     static constexpr int32_t EDITOR_TEXT_SIZE_PX = 14;
-    static constexpr int32_t IME_CANDIDATE_H = 64;
+    static constexpr int32_t IME_CANDIDATE_H = 28;
     static constexpr int32_t IME_KEYBOARD_H = 132;
     static constexpr int32_t IME_TOTAL_H_FALLBACK = IME_CANDIDATE_H + IME_KEYBOARD_H;
+    static constexpr uint8_t IME_PROXY_CAND_MAX = 20;
+    static constexpr uint8_t IME_CAND_PER_PAGE = 8;
+    static constexpr uint16_t IME_CAND_MAX = 160;
     lv_obj_t* screen;
     lv_obj_t* textarea;
     lv_obj_t* ime;
     lv_obj_t* keyboard;
     lv_obj_t* ime_container;
+    lv_obj_t* ime_cand_proxy;
+    lv_obj_t* ime_cand_src;
     lv_obj_t* ime_btn;
     lv_obj_t* title_label;
+    lv_obj_t* save_popup;
+    lv_timer_t* save_popup_timer;
+    char ime_cand_texts[IME_PROXY_CAND_MAX][8];
+    const char* ime_cand_map[IME_PROXY_CAND_MAX + 1];
+    uint8_t ime_cand_src_idx[IME_PROXY_CAND_MAX];
+    bool ime_cand_syncing;
+    char ime_compose[16];
+    bool ime_is_k9_mode;
+    uint16_t ime_cand_count;
+    uint16_t ime_cand_page;
+    char ime_cands[IME_CAND_MAX][8];
     bool ime_visible;
     bool ime_font_acquired;
+    uint32_t ime_cursor_anchor_pos;
+    bool ime_cursor_anchor_valid;
     String current_file;
     std::function<void()> on_exit_cb;
     std::function<void()> on_save_cb;
 
 public:
     Editor() : screen(nullptr), textarea(nullptr), ime(nullptr),
-               keyboard(nullptr), ime_container(nullptr), ime_btn(nullptr), title_label(nullptr),
-               ime_visible(false), ime_font_acquired(false), current_file(""), on_exit_cb(nullptr), on_save_cb(nullptr) {}
+               keyboard(nullptr), ime_container(nullptr), ime_cand_proxy(nullptr), ime_cand_src(nullptr), ime_btn(nullptr), title_label(nullptr),
+               save_popup(nullptr), save_popup_timer(nullptr),
+               ime_cand_syncing(false), ime_is_k9_mode(false), ime_cand_count(0), ime_cand_page(0),
+               ime_visible(false), ime_font_acquired(false), ime_cursor_anchor_pos(0), ime_cursor_anchor_valid(false),
+               current_file(""), on_exit_cb(nullptr), on_save_cb(nullptr) {
+        memset(ime_compose, 0, sizeof(ime_compose));
+        memset(ime_cands, 0, sizeof(ime_cands));
+        memset(ime_cand_texts, 0, sizeof(ime_cand_texts));
+        memset(ime_cand_map, 0, sizeof(ime_cand_map));
+        memset(ime_cand_src_idx, 0xFF, sizeof(ime_cand_src_idx));
+    }
 
     void create(std::function<void()> on_exit = nullptr, std::function<void()> on_save = nullptr) {
         on_exit_cb = on_exit;
@@ -144,6 +171,10 @@ public:
         int32_t editor_cursor_h = EDITOR_TEXT_SIZE_PX;
         if (editor_cursor_h < 4) editor_cursor_h = 4;
         lv_obj_set_style_height(textarea, editor_cursor_h, LV_PART_CURSOR);
+        lv_obj_add_event_cb(textarea, textarea_cursor_anchor_event_cb, LV_EVENT_CLICKED, this);
+        lv_obj_add_event_cb(textarea, textarea_cursor_anchor_event_cb, LV_EVENT_VALUE_CHANGED, this);
+        ime_cursor_anchor_pos = lv_textarea_get_cursor_pos(textarea);
+        ime_cursor_anchor_valid = true;
 
         ime_container = lv_obj_create(screen);
         lv_obj_set_width(ime_container, lv_pct(100));
@@ -193,24 +224,34 @@ public:
         lv_obj_set_style_text_font(keyboard, FontManager::imeFont(), LV_PART_MAIN);
         lv_obj_set_style_text_font(keyboard, FontManager::imeFont(), LV_PART_ITEMS);
         lv_keyboard_set_textarea(keyboard, textarea);
+        static const char * k9_map[] = {
+            "2", "3", "4", "\n",
+            "5", "6", "7", "\n",
+            "8", "9", "0", "\n",
+            "ABC", LV_SYMBOL_LEFT, LV_SYMBOL_RIGHT, LV_SYMBOL_BACKSPACE, ""
+        };
+        lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_TEXT_LOWER);
+        lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_USER_1, k9_map, nullptr);
         lv_ime_pinyin_set_keyboard(ime, keyboard);
         lv_ime_pinyin_set_dict(ime, g_pinyin_dict_plus);
         lv_ime_pinyin_set_mode(ime, LV_IME_PINYIN_MODE_K26);
-        ImeMru::getInstance().init();
         lv_obj_t* cand_panel = lv_ime_pinyin_get_cand_panel(ime);
-        lv_obj_add_event_cb(keyboard, ime_keyboard_mru_event_cb, LV_EVENT_VALUE_CHANGED, this);
         if (cand_panel) {
             lv_obj_set_style_bg_color(cand_panel, lv_color_hex(0x000000), LV_PART_MAIN);
             lv_obj_set_style_bg_color(cand_panel, lv_color_hex(0x111111), LV_PART_ITEMS | LV_STATE_DEFAULT);
             lv_obj_set_style_bg_color(cand_panel, lv_color_hex(0x1A1A1A), LV_PART_ITEMS | LV_STATE_FOCUSED);
             lv_obj_set_style_bg_color(cand_panel, lv_color_hex(0x202020), LV_PART_ITEMS | LV_STATE_PRESSED);
             lv_obj_set_style_bg_color(cand_panel, lv_color_hex(0x151515), LV_PART_ITEMS | LV_STATE_CHECKED);
+            lv_obj_set_style_bg_opa(cand_panel, LV_OPA_TRANSP, LV_PART_MAIN);
+            lv_obj_set_style_bg_opa(cand_panel, LV_OPA_TRANSP, LV_PART_ITEMS);
+            lv_obj_set_style_border_width(cand_panel, 0, LV_PART_MAIN);
+            lv_obj_set_style_border_width(cand_panel, 0, LV_PART_ITEMS);
             lv_obj_set_style_text_color(cand_panel, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
             lv_obj_set_style_text_color(cand_panel, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_DEFAULT);
             lv_obj_set_style_text_color(cand_panel, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_FOCUSED);
             lv_obj_set_style_text_color(cand_panel, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_PRESSED);
             lv_obj_set_style_text_color(cand_panel, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_CHECKED);
-            lv_obj_add_event_cb(cand_panel, ime_cand_mru_event_cb, LV_EVENT_VALUE_CHANGED, this);
+            lv_obj_set_style_text_color(cand_panel, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_DISABLED);
         }
         applyIMEFonts();
 
@@ -219,6 +260,7 @@ public:
     }
 
     void destroy() {
+        closeSavePopup();
         if (ime_font_acquired) {
             FontManager::releaseIMEFont();
             ime_font_acquired = false;
@@ -230,6 +272,8 @@ public:
             ime = nullptr;
             keyboard = nullptr;
             ime_container = nullptr;
+            ime_cand_proxy = nullptr;
+            ime_cand_src = nullptr;
             ime_btn = nullptr;
             title_label = nullptr;
         }
@@ -272,7 +316,66 @@ public:
         return current_file;
     }
 
+    void showSaveSuccessPopup(const String& filename, const String& from_size, const String& to_size) {
+        closeSavePopup();
+        if (!screen) return;
+
+        save_popup = lv_obj_create(screen);
+        lv_obj_add_flag(save_popup, LV_OBJ_FLAG_FLOATING);
+        lv_obj_add_flag(save_popup, LV_OBJ_FLAG_IGNORE_LAYOUT);
+        lv_obj_set_width(save_popup, 210);
+        lv_obj_set_height(save_popup, LV_SIZE_CONTENT);
+        lv_obj_align(save_popup, LV_ALIGN_TOP_MID, 0, 44);
+        lv_obj_set_style_bg_color(save_popup, lv_color_hex(0x0E0E0E), 0);
+        lv_obj_set_style_border_color(save_popup, lv_color_hex(0x4A4A4A), 0);
+        lv_obj_set_style_border_width(save_popup, 1, 0);
+        lv_obj_set_style_radius(save_popup, 6, 0);
+        lv_obj_set_style_pad_all(save_popup, 6, 0);
+        lv_obj_set_style_pad_row(save_popup, 2, 0);
+        lv_obj_set_flex_flow(save_popup, LV_FLEX_FLOW_COLUMN);
+        lv_obj_clear_flag(save_popup, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t* title = lv_label_create(save_popup);
+        lv_label_set_text(title, "Saved");
+        lv_obj_set_style_text_color(title, lv_color_hex(0xBFDFFF), 0);
+        lv_obj_set_style_text_font(title, FontManager::iconFont(), 0);
+
+        lv_obj_t* file_lbl = lv_label_create(save_popup);
+        lv_label_set_text(file_lbl, filename.c_str());
+        lv_label_set_long_mode(file_lbl, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(file_lbl, lv_pct(100));
+        lv_obj_set_style_text_color(file_lbl, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_set_style_text_font(file_lbl, FontManager::textFont(), 0);
+
+        String size_line = from_size + " -> " + to_size;
+        lv_obj_t* size_lbl = lv_label_create(save_popup);
+        lv_label_set_text(size_lbl, size_line.c_str());
+        lv_obj_set_style_text_color(size_lbl, lv_color_hex(0xC8C8C8), 0);
+        lv_obj_set_style_text_font(size_lbl, FontManager::textFont(), 0);
+
+        save_popup_timer = lv_timer_create(save_popup_timer_cb, 1600, this);
+        if (save_popup_timer) lv_timer_set_repeat_count(save_popup_timer, 1);
+    }
+
 private:
+    void closeSavePopup() {
+        if (save_popup_timer) {
+            lv_timer_del(save_popup_timer);
+            save_popup_timer = nullptr;
+        }
+        if (save_popup) {
+            lv_obj_del(save_popup);
+            save_popup = nullptr;
+        }
+    }
+
+    static void save_popup_timer_cb(lv_timer_t* t) {
+        if (!t) return;
+        Editor* ed = (Editor*)lv_timer_get_user_data(t);
+        if (!ed) return;
+        ed->closeSavePopup();
+    }
+
     void styleActionButton(lv_obj_t* btn) {
         lv_obj_set_style_radius(btn, 4, 0);
         lv_obj_set_style_bg_color(btn, lv_color_hex(0x1E1E1E), LV_STATE_DEFAULT);
@@ -359,6 +462,13 @@ private:
         ed->toggleIME();
     }
 
+    static void textarea_cursor_anchor_event_cb(lv_event_t* e) {
+        Editor* ed = (Editor*)lv_event_get_user_data(e);
+        if (!ed || !ed->textarea) return;
+        ed->ime_cursor_anchor_pos = lv_textarea_get_cursor_pos(ed->textarea);
+        ed->ime_cursor_anchor_valid = true;
+    }
+
     static void exit_btn_event_cb(lv_event_t* e) {
         Editor* ed = (Editor*)lv_event_get_user_data(e);
         if (!ed) return;
@@ -375,22 +485,6 @@ private:
         }
     }
 
-    static void ime_keyboard_mru_event_cb(lv_event_t* e) {
-        Editor* ed = (Editor*)lv_event_get_user_data(e);
-        if (!ed || !ed->ime) return;
-        lv_obj_t* cand_panel = lv_ime_pinyin_get_cand_panel(ed->ime);
-        ImeMru::getInstance().applyToCandidatePanel(cand_panel);
-    }
-
-    static void ime_cand_mru_event_cb(lv_event_t* e) {
-        Editor* ed = (Editor*)lv_event_get_user_data(e);
-        lv_obj_t* panel = (lv_obj_t*)lv_event_get_target(e);
-        if (!ed || !panel) return;
-        uint32_t id = lv_buttonmatrix_get_selected_button(panel);
-        const char* txt = lv_buttonmatrix_get_button_text(panel, id);
-        ImeMru::getInstance().learnFromUtf8(txt);
-        ImeMru::getInstance().applyToCandidatePanel(panel);
-    }
 };
 
 #endif

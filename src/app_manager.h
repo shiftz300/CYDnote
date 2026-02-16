@@ -73,6 +73,11 @@ public:
     }
     
     void showEditor(const String& filename) {
+        showEditorRaw(filename);
+    }
+
+private:
+    void showEditorRaw(const String& filename) {
         clearImageGalleryCache();
         if (current_mode != MODE_EDITOR) {
             current_mode = MODE_EDITOR;
@@ -92,6 +97,7 @@ public:
         editor.show(LV_SCR_LOAD_ANIM_FADE_IN);
     }
 
+public:
     void showImage(const String& filename) {
         if (current_mode != MODE_IMAGE_VIEWER) {
             current_mode = MODE_IMAGE_VIEWER;
@@ -136,9 +142,17 @@ public:
         if (current_filename.isEmpty()) {
             current_filename = "L:/note.txt";
         }
+        uint64_t old_size = 0;
+        bool had_old = getVirtualFileSize(current_filename, old_size);
         String content = editor.getText();
         if (writeVirtualFile(current_filename, content)) {
             Serial.println("File saved: " + current_filename);
+            uint64_t new_size = 0;
+            bool has_new = getVirtualFileSize(current_filename, new_size);
+            if (!has_new) new_size = (uint64_t)content.length();
+            String from_h = had_old ? formatBytesHuman(old_size) : "0 B";
+            String to_h = formatBytesHuman(new_size);
+            editor.showSaveSuccessPopup(fileNameOf(current_filename), from_h, to_h);
         } else {
             Serial.println("Save failed!");
         }
@@ -234,6 +248,44 @@ private:
             return sd_helper->writeFile(path.c_str(), data);
         }
         return false;
+    }
+
+    bool getVirtualFileSize(const String& vpath, uint64_t& out_size) {
+        out_size = 0;
+        char drive = driveOf(vpath);
+        String path = innerPathOf(vpath);
+        if (drive == 'L') {
+            File f = LittleFS.open(path.c_str(), "r");
+            if (!f) return false;
+            out_size = (uint64_t)f.size();
+            f.close();
+            return true;
+        }
+        if (drive == 'D' && sd_helper && sd_helper->isInitialized()) {
+            FsFile f = sd_helper->getFs().open(path.c_str(), O_RDONLY);
+            if (!f.isOpen()) return false;
+            out_size = (uint64_t)f.fileSize();
+            f.close();
+            return true;
+        }
+        return false;
+    }
+
+    String formatBytesHuman(uint64_t bytes) const {
+        char buf[32];
+        if (bytes >= (1024ULL * 1024ULL * 1024ULL)) {
+            float v = (float)bytes / (1024.0f * 1024.0f * 1024.0f);
+            snprintf(buf, sizeof(buf), "%.2f GB", v);
+        } else if (bytes >= (1024ULL * 1024ULL)) {
+            float v = (float)bytes / (1024.0f * 1024.0f);
+            snprintf(buf, sizeof(buf), "%.2f MB", v);
+        } else if (bytes >= 1024ULL) {
+            float v = (float)bytes / 1024.0f;
+            snprintf(buf, sizeof(buf), "%.1f KB", v);
+        } else {
+            snprintf(buf, sizeof(buf), "%llu B", (unsigned long long)bytes);
+        }
+        return String(buf);
     }
 
     char driveOf(const String& vpath) const {
