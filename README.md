@@ -7,15 +7,14 @@ CYDnote is a local text note and file manager for the `ESP32-2432S028R` (CYD) bo
 - Single-column file manager (custom UI)
 - Drive sidebar: `L:` LittleFS, `D:` SD card (optional)
 - Breadcrumb navigation, back to parent, menu actions
-- File ops: New (file/folder), Rename, Delete (normal/force recursive), Copy/Paste (auto `name(1).ext`)
-- Text editor: filename title, save/back, 26-key Pinyin IME
+- File ops: New (file/folder), Rename, Delete (normal/force recursive), Copy/Paste
+- Text editor: filename title, save/back, Pinyin IME(9 & 26)
 - Paste progress with ETA and cancel
 - FS info (capacity/used)
-- Optional RGB status LED
 
 ## Pin Definitions
 
-```txt
+```ini
 # Display (ILI9341)
 TFT_MOSI = 13
 TFT_SCLK = 14
