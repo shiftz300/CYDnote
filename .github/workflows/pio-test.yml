@@ -1,12 +1,17 @@
-name: PlatformIO Test
+name: PlatformIO Test & Release
 
 on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  pio-test:
+  pio-test-release:
     runs-on: ubuntu-latest
+    env:
+      PIO_ENV: esp32-2432s028r
 
     steps:
       - name: Checkout
@@ -23,8 +28,33 @@ jobs:
       - name: Run PlatformIO tests
         run: |
           if [ -d test ] && [ -n "$(find test -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) 2>/dev/null)" ]; then
-            pio test -e esp32-2432s028r
+            pio test -e "$PIO_ENV"
           else
-            echo "No PlatformIO unit tests found under ./test, running build check instead."
-            pio run -e esp32-2432s028r
+            echo "No PlatformIO unit tests found under ./test, skip unit tests."
+          fi
+
+      - name: Build firmware
+        run: pio run -e "$PIO_ENV"
+
+      - name: Upload firmware to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TAG=latest
+          RELEASE_NAME="Latest Build"
+          FILES=(
+            ".pio/build/$PIO_ENV/firmware.bin"
+            ".pio/build/$PIO_ENV/bootloader.bin"
+            ".pio/build/$PIO_ENV/partitions.bin"
+          )
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${FILES[@]}" --clobber
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_NAME" --notes "Auto update from $GITHUB_SHA"
+          else
+            gh release create "$RELEASE_TAG" "${FILES[@]}" \
+              --title "$RELEASE_NAME" \
+              --notes "Auto build from $GITHUB_SHA" \
+              --target "$GITHUB_SHA" \
+              --prerelease
           fi

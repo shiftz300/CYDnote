@@ -1,3 +1,22 @@
+# Usage & Warning
+
+Chinese version: `README.zh-CN.md`
+
+## Usage
+
+1. This project is built with `PlatformIO`. Install VS Code and the PlatformIO extension first.
+2. After connecting your `ESP32-2432S028` board, run:
+   - Build: `pio run -e esp32-2432s028r`
+   - Flash: `pio run -e esp32-2432s028r -t upload`
+   - Serial monitor: `pio device monitor -b 115200`
+3. Before first use, upload `data/` to LittleFS if needed:
+   - `pio run -e esp32-2432s028r -t uploadfs`
+
+## Warning
+
+- THIS PROJECT **ONLY SUPPORTS** `ESP32-2432S028/ESP32-2432S028R (CYD)` HARDWARE.
+- DO NOT USE IT DIRECTLY ON BOARDS WITH DIFFERENT DISPLAY RESOLUTION, TOUCH CONTROLLER, OR PIN MAPPING, OR YOU MAY GET A BLACK SCREEN, BROKEN TOUCH INPUT, OR STORAGE ISSUES.
+
 # CYDnote
 
 CYDnote is a local text note and file manager for the `ESP32-2432S028R` (CYD) board, built with `LVGL + TFT_eSPI + XPT2046 + LittleFS + SdFat`.
