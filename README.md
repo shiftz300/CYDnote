@@ -1,99 +1,62 @@
-﻿# CYDnote
+# CYDnote
 
-CYDnote 是一个基于 `ESP32-2432S028R`（CYD）开发板的本地文本笔记与文件管理应用，使用 `LVGL + TFT_eSPI + XPT2046 + LittleFS + SdFat` 实现。
+CYDnote is a local text note and file manager for the `ESP32-2432S028R` (CYD) board, built with `LVGL + TFT_eSPI + XPT2046 + LittleFS + SdFat`.
 
-## 功能概览
+## Features
 
-- 单列文件管理器（非 LVGL 默认文件浏览器）
-- 盘符侧栏：
-  - `L:` 内部 `LittleFS`
-  - `D:` 外部 `SD` 卡（可选）
-- 面包屑导航、返回上级目录、菜单操作
-- 文件操作：
-  - `New`（文件/文件夹）
-  - `Rename`
-  - `Delete`（普通/强制递归）
-  - `Copy/Paste`（重名自动 `name(1).ext`）
-- 文本编辑器：
-  - 文件名标题
-  - 保存/返回
-  - 拼音 IME（26 键）
-- 复制进度：
-  - 在 `Paste` 按钮内显示进度与 ETA
-  - 支持 `Cancel`
-- 文件系统信息显示（容量/占用）
-- RGB 状态灯（可选）
+- Single-column file manager (custom UI)
+- Drive sidebar: `L:` LittleFS, `D:` SD card (optional)
+- Breadcrumb navigation, back to parent, menu actions
+- File ops: New (file/folder), Rename, Delete (normal/force recursive), Copy/Paste (auto `name(1).ext`)
+- Text editor: filename title, save/back, 26-key Pinyin IME
+- Paste progress with ETA and cancel
+- FS info (capacity/used)
+- Optional RGB status LED
 
-## 硬件与引脚（当前项目配置）
+## Pin Definitions
 
-### 显示（ILI9341）
+```txt
+# Display (ILI9341)
+TFT_MOSI = 13
+TFT_SCLK = 14
+TFT_CS   = 15
+TFT_DC   = 2
+TFT_RST  = -1
+TFT_BL   = 21
 
-- `TFT_MOSI = 13`
-- `TFT_SCLK = 14`
-- `TFT_CS = 15`
-- `TFT_DC = 2`
-- `TFT_RST = -1`
-- `TFT_BL = 21`
+# Touch (XPT2046)
+XPT2046_MOSI = 32
+XPT2046_MISO = 39
+XPT2046_CLK  = 25
+XPT2046_CS   = 33
 
-### 触摸（XPT2046）
+# SD card
+SD_CS   = 5
+SD_SCK  = 14
+SD_MISO = 12
+SD_MOSI = 13
+SD_Freq = 25MHz
+```
 
-- `XPT2046_MOSI = 32`
-- `XPT2046_MISO = 39`
-- `XPT2046_CLK = 25`
-- `XPT2046_CS = 33`
+## Font Partitions
 
-### SD 卡
+Font source: `src/font.c` from `SourceHanSansCN-Regular`.
 
-- `SD_CS = 5`
-- `SD_SCK = 14`
-- `SD_MISO = 12`
-- `SD_MOSI = 13`
-- 默认频率：`25MHz`
+Conversion:
 
+- Range: `0x20-0x7F, 0x3000-0x303F, 0x3040-0x30FF, 0x4E00-0x9FAF, 0x0400-0x04FF`
+- Size: `14`
+- Bpp: `2-bit-per-pixel`
+- Compression: enabled
 
-## 软件架构
+Partitions by range:
 
-- `src/main.cpp`：硬件初始化、LVGL 驱动、主循环
-- `src/app_manager.h`：页面切换与应用状态管理
-- `src/ui/file_manager.h`：文件管理器 UI 与文件操作逻辑
-- `src/ui/editor.h`：文本编辑器与 IME
-- `src/utils/sd_helper.h`：SdFat 封装与 SD 信息读取
-- `src/config.h`：项目硬件与功能宏配置
+- CJK (main): `0x4E00-0x9FAF` (20912)
+- Japanese Kana: `0x3040-0x30FF` (192)
+- Cyrillic: `0x0400-0x04FF` (256, incl. extended)
 
-## 构建与烧录
+## Filesystem
 
-### 依赖环境
-
-- VSCode + PlatformIO
-- 开发板：ESP32-2432S028R（4MB Flash）
-
-### 常用命令（PlatformIO）
-
-- 构建：`PlatformIO: Build`
-- 烧录固件：`PlatformIO: Upload`
-- 上传文件系统镜像（LittleFS）：`PlatformIO: Upload Filesystem Image`
-- 串口监视器：`PlatformIO: Monitor`
-
-## 文件系统说明
-
-- 工程使用 `LittleFS`（非 SPIFFS）
-- `data/` 目录用于生成并烧录文件系统镜像
-- 运行时 `L:` 对应 LittleFS
-- `D:` 则对应SD卡（如有）
-
-## 字体说明
-
-- 当前 `src/font.c` 来源：`SourceHanSansCN-Regular`
-- 转换参数：
-  - Range: `0x20-0x7F,0x3000-0x303F,0x3040-0x30FF,0x4E00-0x9FAF,0x0400-0x04FF`
-  - Size: `14`
-  - Bpp: `2-bit-per-pixel`
-  - `Enable font compression`: 已启用
-- 范围说明（按当前 Range 码位统计）：
-  - 常用中文（CJK 主区）：`0x4E00-0x9FAF`，共 `20912` 个码位
-  - 常用日文（假名）：`0x3040-0x30FF`，共 `192` 个码位
-  - 西里尔：`0x0400-0x04FF`，共 `256` 个码位（含扩展）
-
-## 已知限制
-
-- 大字符集显示能力受当前编译字体集限制
+- Uses `LittleFS` (not SPIFFS)
+- `data/` is used to build the LittleFS image
+- `L:` maps to LittleFS, `D:` maps to SD (if present)
