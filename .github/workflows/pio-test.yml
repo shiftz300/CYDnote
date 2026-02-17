@@ -1,0 +1,30 @@
+name: PlatformIO Test
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  pio-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Run PlatformIO tests
+        run: |
+          if [ -d test ] && [ -n "$(find test -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) 2>/dev/null)" ]; then
+            pio test -e esp32-2432s028r
+          else
+            echo "No PlatformIO unit tests found under ./test, running build check instead."
+            pio run -e esp32-2432s028r
+          fi
