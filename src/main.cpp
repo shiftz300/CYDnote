@@ -36,7 +36,7 @@ XPT2046_Touchscreen touchscreen(XPT2046_CS);
 // - Smaller partial chunks reduce per-flush blocking.
 // - Optional double buffer improves overlap between render and flush.
 #ifndef LVGL_DRAW_BUF_DIV
-#define LVGL_DRAW_BUF_DIV 12
+#define LVGL_DRAW_BUF_DIV 8
 #endif
 #ifndef LVGL_DOUBLE_BUF
 #define LVGL_DOUBLE_BUF 1
@@ -69,7 +69,7 @@ static bool lv_sd_fs_registered = false;
 // Auto backlight (CDS/LDR -> TFT backlight PWM)
 static const uint8_t BL_MIN_PCT = 25;                // keep minimum readable brightness
 static const uint8_t BL_MAX_PCT = 85;                // keep headroom so change is visible
-static const uint32_t CDS_SAMPLE_MS = 70;            // smoother response
+static const uint32_t CDS_SAMPLE_MS = 90;            // slower sampling for dark stability
 static const float BL_SMOOTH_ALPHA = 0.22f;          // less jumpy
 static const float BL_GAMMA = 1.8f;                  // bright-zone curve
 static const bool CDS_INVERT = true;                 // light -> brighter
@@ -79,6 +79,9 @@ static const float BL_DARK_GAIN = 0.12f;             // dark zone uses only 12% 
 static const float BL_ULTRA_DARK_ZONE = 0.10f;       // first 10%: extra compressed
 static const float BL_ULTRA_DARK_GAIN = 0.02f;       // first 10% uses only 2% of range
 static const float BL_DARK_HYSTERESIS_PCT = 1.0f;    // low-light anti-flicker deadband
+static const uint8_t BL_DARK_RISE_CONFIRM_SAMPLES = 4; // require sustained rise in dark
+static const float BL_DARK_MAX_STEP_PCT = 0.8f;      // smaller step in dark
+static const int BL_MIN_SPAN_FOR_DYNAMIC = 64;       // avoid tiny span amplification
 
 static bool backlight_pwm_ready = false;
 static bool backlight_pwm_alt_ready = false;
@@ -86,6 +89,9 @@ static float bl_smoothed_pct = (float)BL_MAX_PCT;
 static uint32_t bl_last_sample_ms = 0;
 static int cds_obs_min = 4095;
 static int cds_obs_max = 0;
+static uint16_t cds_samples[5] = {0, 0, 0, 0, 0};
+static uint8_t cds_sample_idx = 0;
+static uint8_t dark_rise_confirm = 0;
 
 static inline void backlightWritePct(uint8_t pct) {
   if (pct < BL_MIN_PCT) pct = BL_MIN_PCT;
@@ -127,6 +133,22 @@ static void backlightAutoUpdate() {
   if (raw < 0) return;
   if (CDS_INVERT) raw = 4095 - raw;
 
+  // 5-point median filter to suppress ADC spikes in low light.
+  cds_samples[cds_sample_idx] = (uint16_t)raw;
+  cds_sample_idx = (uint8_t)((cds_sample_idx + 1U) % 5U);
+  uint16_t w[5];
+  for (int i = 0; i < 5; ++i) w[i] = cds_samples[i];
+  for (int i = 0; i < 4; ++i) {
+    for (int j = i + 1; j < 5; ++j) {
+      if (w[j] < w[i]) {
+        uint16_t t2 = w[i];
+        w[i] = w[j];
+        w[j] = t2;
+      }
+    }
+  }
+  raw = (int)w[2];
+
   // Sliding observation window so brightness reacts to "current environment",
   // not old extreme values from minutes ago.
   if (raw < cds_obs_min) cds_obs_min = raw;
@@ -137,7 +159,7 @@ static void backlightAutoUpdate() {
 
   int span = cds_obs_max - cds_obs_min;
   float t = 0.0f;
-  if (span >= 20) {
+  if (span >= BL_MIN_SPAN_FOR_DYNAMIC) {
     t = (float)(raw - cds_obs_min) / (float)span;
   } else {
     // Not enough ambient variation yet; fallback to full-range rough mapping.
@@ -167,12 +189,26 @@ static void backlightAutoUpdate() {
   }
 
   // Low-light anti-flicker: ignore tiny brightness changes in dark zone.
-  if (t <= BL_DARK_ZONE && fabsf(target_pct - bl_smoothed_pct) < BL_DARK_HYSTERESIS_PCT) {
-    return;
+  if (t <= BL_DARK_ZONE) {
+    float diff = target_pct - bl_smoothed_pct;
+    if (fabsf(diff) < BL_DARK_HYSTERESIS_PCT) return;
+    // In dark: only brighten after several consecutive confirmations.
+    if (diff > 0.0f) {
+      if (dark_rise_confirm < BL_DARK_RISE_CONFIRM_SAMPLES) {
+        dark_rise_confirm++;
+        return;
+      }
+    } else {
+      dark_rise_confirm = 0;
+    }
+  } else {
+    dark_rise_confirm = 0;
   }
-  float delta = (target_pct - bl_smoothed_pct) * BL_SMOOTH_ALPHA;
-  if (delta > BL_MAX_STEP_PCT) delta = BL_MAX_STEP_PCT;
-  if (delta < -BL_MAX_STEP_PCT) delta = -BL_MAX_STEP_PCT;
+  float alpha = (t <= BL_DARK_ZONE) ? 0.12f : BL_SMOOTH_ALPHA;
+  float max_step = (t <= BL_DARK_ZONE) ? BL_DARK_MAX_STEP_PCT : BL_MAX_STEP_PCT;
+  float delta = (target_pct - bl_smoothed_pct) * alpha;
+  if (delta > max_step) delta = max_step;
+  if (delta < -max_step) delta = -max_step;
   bl_smoothed_pct += delta;
   int final_pct = (int)(bl_smoothed_pct + 0.5f);
   backlightWritePct((uint8_t)final_pct);
@@ -381,9 +417,11 @@ static void statusLedUpdate() {
 static void tft_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_map) {
   uint32_t w = (uint32_t)(area->x2 - area->x1 + 1);
   uint32_t h = (uint32_t)(area->y2 - area->y1 + 1);
+  uint32_t len = w * h;
+
   tft.startWrite();
   tft.setAddrWindow(area->x1, area->y1, w, h);
-  tft.pushColors((uint16_t *)px_map, w * h, true);
+  tft.pushColors((uint16_t *)px_map, len, true);
   tft.endWrite();
   lv_display_flush_ready(disp);
 }

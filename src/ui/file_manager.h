@@ -8,6 +8,8 @@
 #include <cctype>
 #include <string.h>
 #include <lvgl.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include "../utils/sd_helper.h"
 #include "font_manager.h"
 #include "../ime/custom_pinyin_dict_plus.h"
@@ -25,6 +27,16 @@ private:
     static constexpr uint8_t IME_PROXY_CAND_MAX = 20;
     static constexpr size_t COPY_IO_CHUNK = 24576;
     static constexpr uint8_t COPY_CHUNKS_PER_TICK = 12;
+    enum FsWorkerJobType {
+        FS_WORK_NONE = 0,
+        FS_WORK_COPY_DIR = 1,
+        FS_WORK_DELETE_BATCH = 2,
+        FS_WORK_COPY_FILE = 3,
+        FS_WORK_CREATE_FILE = 4,
+        FS_WORK_CREATE_DIR = 5,
+        FS_WORK_RENAME = 6,
+        FS_WORK_SCAN_DIR = 7,
+    };
     enum DialogMode {
         DIALOG_NONE,
         DIALOG_NEW_ENTRY,
@@ -69,12 +81,17 @@ private:
     lv_obj_t* menu_copy_cancel_btn;
     lv_obj_t* menu_copy_cancel_label;
     lv_timer_t* copy_timer;
+    lv_timer_t* delete_timer;
+    lv_timer_t* fs_job_timer;
     char copy_src_drive;
     char copy_dst_drive;
     String copy_src_inner;
     String copy_dst_inner;
     size_t copy_total_bytes;
-    size_t copy_done_bytes;
+    volatile size_t copy_done_bytes;
+    size_t copy_total_files;
+    volatile size_t copy_done_files;
+    bool copy_is_dir_job;
     File copy_src_lfs;
     File copy_dst_lfs;
     FsFile copy_src_sdfs;
@@ -111,9 +128,31 @@ private:
     String copied_vpath;
     String pending_open_vpath;
     bool new_as_dir;
-    bool copy_cancel_requested;
+    volatile bool copy_cancel_requested;
     bool copy_in_progress;
+    bool delete_in_progress;
+    bool copy_dir_worker_mode;
+    bool fs_job_in_progress;
     uint32_t copy_started_ms;
+    TaskHandle_t fs_worker_task;
+    volatile FsWorkerJobType fs_worker_job;
+    volatile bool fs_worker_busy;
+    volatile bool fs_worker_done;
+    volatile bool fs_worker_ok;
+    volatile size_t fs_worker_delete_done;
+    volatile size_t fs_worker_delete_removed;
+    size_t fs_worker_delete_total;
+    bool fs_worker_delete_force;
+    std::vector<String> fs_worker_delete_paths;
+    String fs_worker_src_vpath;
+    String fs_worker_dst_vpath;
+    String fs_worker_arg1;
+    String fs_worker_arg2;
+    std::vector<FileListItem> fs_worker_scan_items;
+    String fs_worker_scan_vpath;
+    bool scan_in_progress;
+    bool scan_result_ready;
+    bool scan_result_ok;
     DialogMode dialog_mode;
     uint32_t fs_usage_last_ms;
     int fs_usage_last_pct;
@@ -126,13 +165,13 @@ private:
 public:
     FileManager()
         : screen(nullptr), sidebar(nullptr), breadcrumb_wrap(nullptr), file_list(nullptr),
-          empty_label(nullptr), fs_bar(nullptr), fs_label(nullptr), fs_panel(nullptr), up_btn_ref(nullptr), share_btn_ref(nullptr), drive_btn_l(nullptr), drive_btn_d(nullptr), menu_panel(nullptr), menu_copy_btn(nullptr), menu_paste_btn(nullptr), menu_paste_label(nullptr), menu_paste_progress_track(nullptr), menu_paste_progress_bg(nullptr), menu_copy_cancel_btn(nullptr), menu_copy_cancel_label(nullptr), copy_timer(nullptr), copy_src_drive('L'), copy_dst_drive('L'), copy_src_inner(""), copy_dst_inner(""), copy_total_bytes(0), copy_done_bytes(0), dialog_box(nullptr), dialog_input(nullptr),
+          empty_label(nullptr), fs_bar(nullptr), fs_label(nullptr), fs_panel(nullptr), up_btn_ref(nullptr), share_btn_ref(nullptr), drive_btn_l(nullptr), drive_btn_d(nullptr), menu_panel(nullptr), menu_copy_btn(nullptr), menu_paste_btn(nullptr), menu_paste_label(nullptr), menu_paste_progress_track(nullptr), menu_paste_progress_bg(nullptr), menu_copy_cancel_btn(nullptr), menu_copy_cancel_label(nullptr), copy_timer(nullptr), delete_timer(nullptr), fs_job_timer(nullptr), copy_src_drive('L'), copy_dst_drive('L'), copy_src_inner(""), copy_dst_inner(""), copy_total_bytes(0), copy_done_bytes(0), copy_total_files(0), copy_done_files(0), copy_is_dir_job(false), dialog_box(nullptr), dialog_input(nullptr),
           dialog_ime_container(nullptr), dialog_ime(nullptr), dialog_keyboard(nullptr), dialog_ime_cand_proxy(nullptr), dialog_ime_cand_src(nullptr),
           dialog_new_file_btn(nullptr), dialog_new_dir_btn(nullptr), share_info_label(nullptr), share_action_btn(nullptr), share_action_label(nullptr),
           dialog_ime_font_acquired(false), dialog_ime_cand_syncing(false),
           on_open_cb(nullptr), on_share_ap_toggle_cb(nullptr), on_share_ap_running_cb(nullptr), on_share_ap_status_cb(nullptr),
           sd_ready(false), remove_mode(false), copy_pick_mode(false), active_drive('L'),
-          current_path("/"), selected_vpath(""), copied_vpath(""), pending_open_vpath(""), new_as_dir(false), copy_cancel_requested(false), copy_in_progress(false), copy_started_ms(0), dialog_mode(DIALOG_NONE),
+          current_path("/"), selected_vpath(""), copied_vpath(""), pending_open_vpath(""), new_as_dir(false), copy_cancel_requested(false), copy_in_progress(false), delete_in_progress(false), copy_dir_worker_mode(false), fs_job_in_progress(false), copy_started_ms(0), fs_worker_task(nullptr), fs_worker_job(FS_WORK_NONE), fs_worker_busy(false), fs_worker_done(false), fs_worker_ok(false), fs_worker_delete_done(0), fs_worker_delete_removed(0), fs_worker_delete_total(0), fs_worker_delete_force(false), fs_worker_src_vpath(""), fs_worker_dst_vpath(""), fs_worker_arg1(""), fs_worker_arg2(""), fs_worker_scan_items(), fs_worker_scan_vpath(""), scan_in_progress(false), scan_result_ready(false), scan_result_ok(false), dialog_mode(DIALOG_NONE),
           fs_usage_last_ms(0), fs_usage_last_pct(0), fs_usage_last_valid(false), list_suspended_for_dialog(false), reset_scroll_pending(true),
           dialog_ime_cursor_anchor_pos(0), dialog_ime_cursor_anchor_valid(false) {
         memset(dialog_ime_cand_texts, 0, sizeof(dialog_ime_cand_texts));
@@ -416,6 +455,7 @@ public:
     }
 
     bool isCopyInProgress() const { return copy_in_progress; }
+    bool isFsBusy() const { return copy_in_progress || delete_in_progress || fs_job_in_progress || scan_in_progress; }
 
 private:
     static void drive_btn_event_cb(lv_event_t* e) {
@@ -460,6 +500,7 @@ private:
         FileManager* fm = (FileManager*)lv_event_get_user_data(e);
         lv_obj_t* btn = (lv_obj_t*)lv_event_get_target(e);
         if (!fm || !btn) return;
+        if (fm->delete_in_progress || fm->fs_job_in_progress) return;
         EntryMeta* meta = (EntryMeta*)lv_obj_get_user_data(btn);
         if (!meta) return;
 
@@ -473,14 +514,8 @@ private:
             return;
         }
         if (fm->copy_pick_mode) {
-            if (meta->is_dir) {
-                fm->current_path = fm->joinPath(fm->current_path, meta->name);
-                fm->selected_vpath = "";
-                fm->reset_scroll_pending = true;
-                fm->refreshUi();
-                return;
-            }
             fm->copied_vpath = meta->vpath;
+            fm->selected_vpath = meta->vpath;
             fm->updateMenuActionStates();
             fm->copy_pick_mode = false;
             fm->closeMenuPanel();
@@ -549,6 +584,7 @@ private:
     static void menu_remove_event_cb(lv_event_t* e) {
         FileManager* fm = (FileManager*)lv_event_get_user_data(e);
         if (!fm) return;
+        if (fm->delete_in_progress || fm->fs_job_in_progress) return;
         fm->exitCopyPickModeIfNeeded(false);
         if (!fm->remove_mode) {
             fm->remove_mode = true;
@@ -568,9 +604,17 @@ private:
     static void menu_copy_event_cb(lv_event_t* e) {
         FileManager* fm = (FileManager*)lv_event_get_user_data(e);
         if (!fm) return;
+        if (fm->delete_in_progress || fm->fs_job_in_progress) return;
         fm->exitRemoveModeIfNeeded(false);
-        fm->copy_pick_mode = true;
-        fm->selected_vpath = "";
+        if (fm->selected_vpath.length() > 0) {
+            // Use current selection as copy source immediately.
+            fm->copied_vpath = fm->selected_vpath;
+            fm->copy_pick_mode = false;
+            fm->updateMenuActionStates();
+        } else {
+            // Fallback: enter pick mode if nothing is selected yet.
+            fm->copy_pick_mode = true;
+        }
         fm->closeMenuPanel();
         fm->refreshSelectionHighlight();
     }
@@ -578,7 +622,7 @@ private:
     static void menu_paste_event_cb(lv_event_t* e) {
         FileManager* fm = (FileManager*)lv_event_get_user_data(e);
         if (!fm) return;
-        if (fm->copy_in_progress) return;
+        if (fm->copy_in_progress || fm->delete_in_progress || fm->fs_job_in_progress) return;
         fm->exitRemoveModeIfNeeded(true);
         fm->exitCopyPickModeIfNeeded(false);
         fm->pasteCopied();
@@ -613,6 +657,58 @@ private:
         FileManager* fm = (FileManager*)lv_timer_get_user_data(t);
         if (!fm) return;
         fm->stepCopyJob();
+    }
+
+    static void delete_timer_cb(lv_timer_t* t) {
+        FileManager* fm = (FileManager*)lv_timer_get_user_data(t);
+        if (!fm) return;
+        fm->stepDeleteJob();
+    }
+
+    static void fs_job_timer_cb(lv_timer_t* t) {
+        FileManager* fm = (FileManager*)lv_timer_get_user_data(t);
+        if (!fm) return;
+        fm->stepFsJob();
+    }
+
+    static void fs_worker_task_entry(void* arg) {
+        FileManager* fm = (FileManager*)arg;
+        if (!fm) {
+            vTaskDelete(nullptr);
+            return;
+        }
+        while (true) {
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            bool ok = false;
+            fm->fs_worker_busy = true;
+            fm->fs_worker_done = false;
+            if (fm->fs_worker_job == FS_WORK_COPY_DIR) {
+                ok = fm->copyDirectoryRecursive(fm->fs_worker_src_vpath, fm->fs_worker_dst_vpath);
+            } else if (fm->fs_worker_job == FS_WORK_DELETE_BATCH) {
+                ok = true;
+                fm->fs_worker_delete_removed = 0;
+                for (size_t i = 0; i < fm->fs_worker_delete_paths.size(); i++) {
+                    if (fm->deletePath(fm->fs_worker_delete_paths[i], fm->fs_worker_delete_force)) {
+                        fm->fs_worker_delete_removed++;
+                    }
+                    fm->fs_worker_delete_done = i + 1;
+                    delay(0);
+                }
+            } else if (fm->fs_worker_job == FS_WORK_COPY_FILE) {
+                ok = fm->copyFile(fm->fs_worker_src_vpath, fm->fs_worker_dst_vpath, fm->copy_total_bytes, false);
+            } else if (fm->fs_worker_job == FS_WORK_CREATE_FILE) {
+                ok = fm->writeTextFile(fm->fs_worker_arg1, "");
+            } else if (fm->fs_worker_job == FS_WORK_CREATE_DIR) {
+                ok = fm->makeDir(fm->fs_worker_arg1);
+            } else if (fm->fs_worker_job == FS_WORK_RENAME) {
+                ok = fm->renamePath(fm->fs_worker_arg1, fm->fs_worker_arg2);
+            } else if (fm->fs_worker_job == FS_WORK_SCAN_DIR) {
+                ok = fm->scanDirectoryIntoWorker(fm->fs_worker_scan_vpath);
+            }
+            fm->fs_worker_ok = ok;
+            fm->fs_worker_busy = false;
+            fm->fs_worker_done = true;
+        }
     }
 
     static void dialog_ok_event_cb(lv_event_t* e) {
@@ -870,89 +966,78 @@ private:
     }
 
     void reloadEntries() {
-        clearList();
         if (!file_list || !empty_label) return;
 
-        bool has_items = false;
-        if (active_drive == 'L') has_items = loadLittleFsEntries();
-        else if (active_drive == 'D') has_items = loadSdEntries();
-
-        if (!has_items) {
-            lv_label_set_text(empty_label, remove_mode ? "(remove mode, no items)" : "(empty)");
-            lv_obj_remove_flag(empty_label, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_center(empty_label);
-        } else {
-            lv_obj_add_flag(empty_label, LV_OBJ_FLAG_HIDDEN);
-        }
-
-        if (reset_scroll_pending) {
-            lv_obj_scroll_to_y(file_list, 0, LV_ANIM_OFF);
-            reset_scroll_pending = false;
-        }
-    }
-
-    bool loadLittleFsEntries() {
-        File dir = LittleFS.open(current_path.c_str(), "r");
-        if (!dir || !dir.isDirectory()) {
-            lv_label_set_text(empty_label, "(invalid path)");
-            return false;
-        }
-        std::vector<FileListItem> items;
-        items.reserve(64);
-        uint32_t iter = 0;
-        while (true) {
-            File entry = dir.openNextFile();
-            if (!entry) break;
-            String name = baseName(entry.name());
-            if (name.length() > 0) {
-                FileListItem it;
-                it.name = name;
-                it.is_dir = entry.isDirectory();
-                items.push_back(it);
+        if (active_drive == 'D') {
+            clearList();
+            fs_worker_scan_items.clear();
+            bool ok = scanDirectoryIntoWorker(String('D') + ":" + current_path);
+            bool has_items = false;
+            if (ok) {
+                sortEntryItems(fs_worker_scan_items);
+                for (size_t i = 0; i < fs_worker_scan_items.size(); i++) {
+                    addEntryButton(fs_worker_scan_items[i].name, fs_worker_scan_items[i].is_dir);
+                }
+                has_items = !fs_worker_scan_items.empty();
             }
-            entry.close();
-            if ((++iter & 0x0F) == 0) delay(0);
-        }
-        dir.close();
-        sortEntryItems(items);
-        for (size_t i = 0; i < items.size(); i++) {
-            addEntryButton(items[i].name, items[i].is_dir);
-        }
-        return !items.empty();
-    }
-
-    bool loadSdEntries() {
-        if (!sd_ready || !StorageHelper::getInstance()->isInitialized()) {
-            lv_label_set_text(empty_label, "(SD unavailable)");
-            return false;
-        }
-        FsFile dir = StorageHelper::getInstance()->getFs().open(current_path.c_str(), O_RDONLY);
-        if (!dir || !dir.isDir()) {
-            lv_label_set_text(empty_label, "(invalid path)");
-            return false;
-        }
-        std::vector<FileListItem> items;
-        items.reserve(64);
-        uint32_t iter = 0;
-        FsFile entry;
-        while (entry.openNext(&dir, O_RDONLY)) {
-            char name[256];
-            entry.getName(name, sizeof(name));
-            if (name[0] != '\0') {
-                FileListItem it;
-                it.name = String(name);
-                it.is_dir = entry.isDir();
-                items.push_back(it);
+            if (!has_items) {
+                lv_label_set_text(empty_label, remove_mode ? "(remove mode, no items)" : "(empty)");
+                lv_obj_remove_flag(empty_label, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_center(empty_label);
+            } else {
+                lv_obj_add_flag(empty_label, LV_OBJ_FLAG_HIDDEN);
             }
-            entry.close();
-            if ((++iter & 0x0F) == 0) delay(0);
+            fs_worker_scan_items.clear();
+            if (reset_scroll_pending) {
+                lv_obj_scroll_to_y(file_list, 0, LV_ANIM_OFF);
+                reset_scroll_pending = false;
+            }
+            return;
         }
-        dir.close();
-        sortEntryItems(items);
-        for (size_t i = 0; i < items.size(); i++) {
-            addEntryButton(items[i].name, items[i].is_dir);
+
+        if (scan_result_ready) {
+            clearList();
+            bool has_items = false;
+            if (scan_result_ok) {
+                sortEntryItems(fs_worker_scan_items);
+                for (size_t i = 0; i < fs_worker_scan_items.size(); i++) {
+                    addEntryButton(fs_worker_scan_items[i].name, fs_worker_scan_items[i].is_dir);
+                }
+                has_items = !fs_worker_scan_items.empty();
+            }
+            if (!has_items) {
+                lv_label_set_text(empty_label, remove_mode ? "(remove mode, no items)" : "(empty)");
+                lv_obj_remove_flag(empty_label, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_center(empty_label);
+            } else {
+                lv_obj_add_flag(empty_label, LV_OBJ_FLAG_HIDDEN);
+            }
+            scan_result_ready = false;
+            fs_worker_scan_items.clear();
+            if (reset_scroll_pending) {
+                lv_obj_scroll_to_y(file_list, 0, LV_ANIM_OFF);
+                reset_scroll_pending = false;
+            }
+            return;
         }
-        return !items.empty();
+
+        if (!scan_in_progress) {
+            String v = String(active_drive) + ":" + current_path;
+            if (!startScanJob(v)) {
+                if (lv_obj_get_child_count(file_list) <= 1) {
+                    lv_label_set_text(empty_label, remove_mode ? "(remove mode, no items)" : "(empty)");
+                    lv_obj_remove_flag(empty_label, LV_OBJ_FLAG_HIDDEN);
+                    lv_obj_center(empty_label);
+                }
+                return;
+            }
+            // Keep old list visible while background scan is running.
+            if (lv_obj_get_child_count(file_list) <= 1) {
+                lv_label_set_text(empty_label, "");
+                lv_obj_remove_flag(empty_label, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_center(empty_label);
+            }
+        }
     }
 
     static uint8_t sortRankChar(uint8_t c) {
@@ -960,6 +1045,65 @@ private:
         if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) return 1;
         if (c < 0x80) return 2;   // ASCII symbols
         return 3;                 // non-ASCII bytes (UTF-8)
+    }
+
+    bool scanDirectoryIntoWorker(const String& vpath) {
+        fs_worker_scan_items.clear();
+        char d = driveOf(vpath);
+        String p = innerPath(vpath);
+        if (d == 'L') {
+            File dir = LittleFS.open(p.c_str(), "r");
+            if (!dir || !dir.isDirectory()) return false;
+            uint32_t iter = 0;
+            while (true) {
+                File entry = dir.openNextFile();
+                if (!entry) break;
+                String name = baseName(entry.name());
+                if (name.length() > 0) {
+                    FileListItem it;
+                    it.name = name;
+                    it.is_dir = entry.isDirectory();
+                    fs_worker_scan_items.push_back(it);
+                }
+                entry.close();
+                if ((++iter & 0x0F) == 0) delay(0);
+            }
+            dir.close();
+            return true;
+        }
+        if (d == 'D') {
+            if (!sd_ready || !StorageHelper::getInstance()->isInitialized()) return false;
+            FsFile dir = StorageHelper::getInstance()->getFs().open(p.c_str(), O_RDONLY);
+            if (!dir || !dir.isDir()) return false;
+            uint32_t iter = 0;
+            FsFile entry;
+            while (entry.openNext(&dir, O_RDONLY)) {
+                char name[256];
+                entry.getName(name, sizeof(name));
+                if (name[0] != '\0') {
+                    FileListItem it;
+                    it.name = String(name);
+                    it.is_dir = entry.isDir();
+                    fs_worker_scan_items.push_back(it);
+                }
+                entry.close();
+                if ((++iter & 0x0F) == 0) delay(0);
+            }
+            dir.close();
+            return true;
+        }
+        return false;
+    }
+
+    bool usesSdPath(const String& vpath) const {
+        return driveOf(vpath) == 'D';
+    }
+
+    bool hasAnySdPath(const std::vector<String>& vpaths) const {
+        for (size_t i = 0; i < vpaths.size(); i++) {
+            if (usesSdPath(vpaths[i])) return true;
+        }
+        return false;
     }
 
     static bool lessName09az(const String& a, const String& b) {
@@ -1065,9 +1209,19 @@ private:
 
     void updateFsUsageUi() {
         if (!fs_bar || !fs_label) return;
+        bool fs_busy = copy_in_progress || delete_in_progress || fs_job_in_progress || scan_in_progress;
 
         // SD usage probing can be expensive (freeClusterCount scan). Throttle it.
         if (active_drive == 'D') {
+            if (fs_busy) {
+                if (fs_usage_last_valid) {
+                    lv_bar_set_value(fs_bar, fs_usage_last_pct, LV_ANIM_OFF);
+                    char quick[16];
+                    lv_snprintf(quick, sizeof(quick), "%d\n%%", fs_usage_last_pct);
+                    lv_label_set_text(fs_label, quick);
+                }
+                return;
+            }
             uint32_t now = millis();
             if (fs_usage_last_valid && (now - fs_usage_last_ms) < 1500) {
                 lv_bar_set_value(fs_bar, fs_usage_last_pct, LV_ANIM_OFF);
@@ -1121,12 +1275,13 @@ private:
     }
 
     void updateMenuActionStates() {
+        bool busy = copy_in_progress || delete_in_progress || fs_job_in_progress;
         if (menu_copy_btn) {
-            if (copy_in_progress) lv_obj_add_state(menu_copy_btn, LV_STATE_DISABLED);
+            if (busy) lv_obj_add_state(menu_copy_btn, LV_STATE_DISABLED);
             else lv_obj_clear_state(menu_copy_btn, LV_STATE_DISABLED);
         }
         if (menu_paste_btn) {
-            if (copy_in_progress) lv_obj_add_state(menu_paste_btn, LV_STATE_DISABLED);
+            if (busy) lv_obj_add_state(menu_paste_btn, LV_STATE_DISABLED);
             else if (copied_vpath.length() > 0) lv_obj_clear_state(menu_paste_btn, LV_STATE_DISABLED);
             else lv_obj_add_state(menu_paste_btn, LV_STATE_DISABLED);
         }
@@ -1195,8 +1350,11 @@ private:
         lv_obj_set_style_text_color(title_lbl, lv_color_hex(0xFFFFFF), 0);
         lv_obj_set_style_text_font(title_lbl, FontManager::textFont(), 0);
 
+        const char* hint_text = "Enter a name.";
+        if (mode == DIALOG_RENAME) hint_text = "Enter a new name.";
+
         lv_obj_t* hint_lbl = lv_label_create(dialog_box);
-        lv_label_set_text(hint_lbl, "Type a name. New supports file and folder.");
+        lv_label_set_text(hint_lbl, hint_text);
         lv_label_set_long_mode(hint_lbl, LV_LABEL_LONG_WRAP);
         lv_obj_set_width(hint_lbl, lv_pct(100));
         lv_obj_set_style_text_color(hint_lbl, lv_color_hex(0xB0B0B0), 0);
@@ -1779,38 +1937,75 @@ private:
         if (dialog_mode == DIALOG_NEW_ENTRY) {
             String base_vpath = String(active_drive) + ":" + joinPath(current_path, name);
             String final_vpath = nextAvailableVPath(base_vpath);
-            if (new_as_dir) makeDir(final_vpath);
-            else writeTextFile(final_vpath, "");
+            if (new_as_dir) {
+                startFsJob(FS_WORK_CREATE_DIR, final_vpath, "", true);
+            } else {
+                startFsJob(FS_WORK_CREATE_FILE, final_vpath, "", true);
+            }
         } else if (dialog_mode == DIALOG_RENAME) {
             if (selected_vpath.length() > 0) {
+                String old_v = selected_vpath;
                 String src = innerPath(selected_vpath);
                 String parent = parentPath(src);
                 String dst = normalizeInner(parent + "/" + name);
                 String dst_v = String(driveOf(selected_vpath)) + ":" + dst;
                 if (dst_v != selected_vpath) dst_v = nextAvailableVPath(dst_v);
-                renamePath(selected_vpath, dst_v);
                 selected_vpath = dst_v;
+                startFsJob(FS_WORK_RENAME, old_v, dst_v, true);
             }
         }
         closeDialog();
     }
 
     void applyRemoveMarked(bool force_delete) {
-        if (!file_list) return;
+        if (!file_list || delete_in_progress || copy_in_progress) return;
         uint32_t count = lv_obj_get_child_count(file_list);
-        uint32_t removed = 0;
+        fs_worker_delete_paths.clear();
         for (uint32_t i = 0; i < count; i++) {
             lv_obj_t* row = lv_obj_get_child(file_list, i);
             EntryMeta* meta = (EntryMeta*)lv_obj_get_user_data(row);
             if (meta && meta->marked) {
-                if (deletePath(meta->vpath, force_delete)) removed++;
-                delay(0);
+                fs_worker_delete_paths.push_back(meta->vpath);
             }
         }
+        if (fs_worker_delete_paths.empty()) {
+            selected_vpath = "";
+            remove_mode = false;
+            closeMenuPanel();
+            refreshUi();
+            return;
+        }
+
+        if (hasAnySdPath(fs_worker_delete_paths) || !ensureFsWorkerTask()) {
+            // Fallback to sync delete if worker creation fails.
+            uint32_t removed = 0;
+            for (size_t i = 0; i < fs_worker_delete_paths.size(); i++) {
+                if (deletePath(fs_worker_delete_paths[i], force_delete)) removed++;
+                delay(0);
+            }
+            selected_vpath = "";
+            remove_mode = false;
+            closeMenuPanel();
+            if (removed) delay(0);
+            refreshUi();
+            fs_worker_delete_paths.clear();
+            return;
+        }
+
+        fs_worker_delete_force = force_delete;
+        fs_worker_delete_total = fs_worker_delete_paths.size();
+        fs_worker_delete_done = 0;
+        fs_worker_delete_removed = 0;
+        fs_worker_ok = false;
+        fs_worker_done = false;
+        delete_in_progress = true;
         selected_vpath = "";
         remove_mode = false;
         closeMenuPanel();
-        if (removed) delay(0);
+        updateMenuActionStates();
+        if (!delete_timer) delete_timer = lv_timer_create(delete_timer_cb, 25, this);
+        fs_worker_job = FS_WORK_DELETE_BATCH;
+        xTaskNotifyGive(fs_worker_task);
         refreshUi();
     }
 
@@ -1821,6 +2016,59 @@ private:
         size_t src_size = getFileSize(copied_vpath);
         String base_dest_v = String(active_drive) + ":" + joinPath(current_path, src_name);
         String dest_v = nextAvailableVPath(base_dest_v);
+        bool involve_sd = usesSdPath(copied_vpath) || usesSdPath(dest_v);
+
+        if (isDirectoryPath(copied_vpath)) {
+            copy_total_bytes = calcDirectoryTotalBytes(copied_vpath);
+            copy_done_bytes = 0;
+            copy_total_files = calcDirectoryFileCount(copied_vpath);
+            copy_done_files = 0;
+            copy_is_dir_job = true;
+            copy_cancel_requested = false;
+            copy_in_progress = true;
+            copy_dir_worker_mode = true;
+            copy_started_ms = millis();
+            fs_worker_src_vpath = copied_vpath;
+            fs_worker_dst_vpath = dest_v;
+            fs_worker_ok = false;
+            fs_worker_done = false;
+            updateMenuActionStates();
+            if (menu_panel) lv_obj_remove_flag(menu_panel, LV_OBJ_FLAG_HIDDEN);
+            showCopyProgressOnPaste();
+            if (involve_sd || !ensureFsWorkerTask()) {
+                bool ok = copyDirectoryRecursive(copied_vpath, dest_v);
+                if (!ok) {
+                    deletePath(dest_v, true);
+                } else if (copy_total_bytes > 0) {
+                    copy_done_files = copy_total_files;
+                    updateCopyProgressOnPaste(copy_total_bytes, copy_total_bytes);
+                }
+                copy_in_progress = false;
+                copy_cancel_requested = false;
+                updateMenuActionStates();
+                hideCopyProgressOnPaste();
+                closeMenuPanel();
+                list_suspended_for_dialog = false;
+                refreshUi();
+                return;
+            }
+            fs_worker_job = FS_WORK_COPY_DIR;
+            xTaskNotifyGive(fs_worker_task);
+            if (!copy_timer) copy_timer = lv_timer_create(copy_timer_cb, 8, this);
+            if (!copy_timer) {
+                copy_cancel_requested = true;
+                copy_in_progress = false;
+                copy_dir_worker_mode = false;
+                updateMenuActionStates();
+                hideCopyProgressOnPaste();
+                closeMenuPanel();
+                list_suspended_for_dialog = false;
+                refreshUi();
+            }
+            return;
+        }
+
+        // Keep single-file copy on UI task (timer-driven) to avoid SD SPI task ownership asserts.
         showCopyProgressOnPaste();
         if (!beginCopyJob(copied_vpath, dest_v, src_size)) {
             hideCopyProgressOnPaste();
@@ -1831,6 +2079,200 @@ private:
         }
     }
 
+    bool isDirectoryPath(const String& vpath) {
+        char d = driveOf(vpath);
+        String p = innerPath(vpath);
+        if (d == 'L') {
+            File node = LittleFS.open(p.c_str(), "r");
+            if (!node) return false;
+            bool is_dir = node.isDirectory();
+            node.close();
+            return is_dir;
+        }
+        if (d == 'D' && sd_ready && StorageHelper::getInstance()->isInitialized()) {
+            FsFile node = StorageHelper::getInstance()->getFs().open(p.c_str(), O_RDONLY);
+            if (!node) return false;
+            bool is_dir = node.isDir();
+            node.close();
+            return is_dir;
+        }
+        return false;
+    }
+
+    size_t calcDirectoryTotalBytes(const String& vpath) {
+        if (!isDirectoryPath(vpath)) return getFileSize(vpath);
+
+        size_t total = 0;
+        char d = driveOf(vpath);
+        String p = innerPath(vpath);
+
+        if (d == 'L') {
+            File dir = LittleFS.open(p.c_str(), "r");
+            if (!dir || !dir.isDirectory()) return 0;
+            while (true) {
+                File entry = dir.openNextFile();
+                if (!entry) break;
+                String name = baseName(String(entry.name()));
+                bool is_dir = entry.isDirectory();
+                size_t sz = (size_t)entry.size();
+                entry.close();
+                if (name.length() == 0) continue;
+                String child_v = String('L') + ":" + joinPath(p, name);
+                total += is_dir ? calcDirectoryTotalBytes(child_v) : sz;
+                delay(0);
+            }
+            dir.close();
+            return total;
+        }
+
+        if (d == 'D' && sd_ready && StorageHelper::getInstance()->isInitialized()) {
+            SdFs& fs = StorageHelper::getInstance()->getFs();
+            FsFile dir = fs.open(p.c_str(), O_RDONLY);
+            if (!dir || !dir.isDir()) return 0;
+            FsFile entry;
+            while (entry.openNext(&dir, O_RDONLY)) {
+                char name_buf[256];
+                name_buf[0] = '\0';
+                entry.getName(name_buf, sizeof(name_buf));
+                bool is_dir = entry.isDir();
+                size_t sz = (size_t)entry.fileSize();
+                entry.close();
+                String name = baseName(String(name_buf));
+                if (name.length() == 0) continue;
+                String child_v = String('D') + ":" + joinPath(p, name);
+                total += is_dir ? calcDirectoryTotalBytes(child_v) : sz;
+                delay(0);
+            }
+            dir.close();
+            return total;
+        }
+
+        return 0;
+    }
+
+    size_t calcDirectoryFileCount(const String& vpath) {
+        if (!isDirectoryPath(vpath)) return 1;
+
+        size_t total = 0;
+        char d = driveOf(vpath);
+        String p = innerPath(vpath);
+
+        if (d == 'L') {
+            File dir = LittleFS.open(p.c_str(), "r");
+            if (!dir || !dir.isDirectory()) return 0;
+            while (true) {
+                File entry = dir.openNextFile();
+                if (!entry) break;
+                String name = baseName(String(entry.name()));
+                bool is_dir = entry.isDirectory();
+                entry.close();
+                if (name.length() == 0) continue;
+                String child_v = String('L') + ":" + joinPath(p, name);
+                total += is_dir ? calcDirectoryFileCount(child_v) : 1;
+                delay(0);
+            }
+            dir.close();
+            return total;
+        }
+
+        if (d == 'D' && sd_ready && StorageHelper::getInstance()->isInitialized()) {
+            SdFs& fs = StorageHelper::getInstance()->getFs();
+            FsFile dir = fs.open(p.c_str(), O_RDONLY);
+            if (!dir || !dir.isDir()) return 0;
+            FsFile entry;
+            while (entry.openNext(&dir, O_RDONLY)) {
+                char name_buf[256];
+                name_buf[0] = '\0';
+                entry.getName(name_buf, sizeof(name_buf));
+                bool is_dir = entry.isDir();
+                entry.close();
+                String name = baseName(String(name_buf));
+                if (name.length() == 0) continue;
+                String child_v = String('D') + ":" + joinPath(p, name);
+                total += is_dir ? calcDirectoryFileCount(child_v) : 1;
+                delay(0);
+            }
+            dir.close();
+            return total;
+        }
+
+        return 0;
+    }
+
+    bool copyDirectoryRecursive(const String& src_vpath, const String& dst_vpath) {
+        if (copy_cancel_requested) return false;
+        if (!makeDir(dst_vpath)) return false;
+
+        char src_drive = driveOf(src_vpath);
+        char dst_drive = driveOf(dst_vpath);
+        String src_inner = innerPath(src_vpath);
+        String dst_inner = innerPath(dst_vpath);
+
+        if (src_drive == 'L') {
+            File dir = LittleFS.open(src_inner.c_str(), "r");
+            if (!dir || !dir.isDirectory()) return false;
+            while (true) {
+                delay(0);
+                if (copy_cancel_requested) {
+                    dir.close();
+                    return false;
+                }
+                File entry = dir.openNextFile();
+                if (!entry) break;
+                String name = baseName(String(entry.name()));
+                bool is_dir = entry.isDirectory();
+                entry.close();
+                if (name.length() == 0) continue;
+
+                String child_src_v = String(src_drive) + ":" + joinPath(src_inner, name);
+                String child_dst_v = String(dst_drive) + ":" + joinPath(dst_inner, name);
+                bool ok = is_dir ? copyDirectoryRecursive(child_src_v, child_dst_v)
+                                 : copyFile(child_src_v, child_dst_v, copy_total_bytes, !copy_dir_worker_mode);
+                if (!ok) {
+                    dir.close();
+                    return false;
+                }
+            }
+            dir.close();
+            return true;
+        }
+
+        if (src_drive == 'D' && sd_ready && StorageHelper::getInstance()->isInitialized()) {
+            SdFs& fs = StorageHelper::getInstance()->getFs();
+            FsFile dir = fs.open(src_inner.c_str(), O_RDONLY);
+            if (!dir || !dir.isDir()) return false;
+            FsFile entry;
+            while (entry.openNext(&dir, O_RDONLY)) {
+                delay(0);
+                if (copy_cancel_requested) {
+                    entry.close();
+                    dir.close();
+                    return false;
+                }
+                char name_buf[256];
+                name_buf[0] = '\0';
+                entry.getName(name_buf, sizeof(name_buf));
+                bool is_dir = entry.isDir();
+                entry.close();
+                String name = baseName(String(name_buf));
+                if (name.length() == 0) continue;
+
+                String child_src_v = String(src_drive) + ":" + joinPath(src_inner, name);
+                String child_dst_v = String(dst_drive) + ":" + joinPath(dst_inner, name);
+                bool ok = is_dir ? copyDirectoryRecursive(child_src_v, child_dst_v)
+                                 : copyFile(child_src_v, child_dst_v, copy_total_bytes, !copy_dir_worker_mode);
+                if (!ok) {
+                    dir.close();
+                    return false;
+                }
+            }
+            dir.close();
+            return true;
+        }
+
+        return false;
+    }
+
     bool beginCopyJob(const String& src_vpath, const String& dst_vpath, size_t total_bytes) {
         if (copy_in_progress) return false;
         copy_src_drive = driveOf(src_vpath);
@@ -1839,6 +2281,10 @@ private:
         copy_dst_inner = innerPath(dst_vpath);
         copy_total_bytes = total_bytes;
         copy_done_bytes = 0;
+        copy_total_files = 0;
+        copy_done_files = 0;
+        copy_is_dir_job = false;
+        copy_dir_worker_mode = false;
         copy_cancel_requested = false;
         copy_started_ms = millis();
 
@@ -1900,21 +2346,68 @@ private:
         copy_dst_inner = "";
         copy_total_bytes = 0;
         copy_done_bytes = 0;
+        copy_total_files = 0;
+        copy_done_files = 0;
+        copy_is_dir_job = false;
+        copy_dir_worker_mode = false;
         updateMenuActionStates();
     }
 
     void finishCopyJob(bool success) {
+        if (!success && fs_worker_dst_vpath.length() > 0 &&
+            (fs_worker_job == FS_WORK_COPY_DIR || fs_worker_job == FS_WORK_COPY_FILE)) {
+            deletePath(fs_worker_dst_vpath, true);
+        }
         cancelCopyJob(!success);
+        fs_worker_src_vpath = "";
+        fs_worker_dst_vpath = "";
+        fs_worker_job = FS_WORK_NONE;
+        fs_worker_done = false;
+        fs_worker_ok = false;
         hideCopyProgressOnPaste();
         closeMenuPanel();
         list_suspended_for_dialog = false;
         refreshUi();
     }
 
+    void finishDeleteJob() {
+        delete_in_progress = false;
+        if (delete_timer) {
+            lv_timer_del(delete_timer);
+            delete_timer = nullptr;
+        }
+        fs_worker_delete_paths.clear();
+        fs_worker_delete_total = 0;
+        fs_worker_delete_done = 0;
+        fs_worker_delete_removed = 0;
+        fs_worker_done = false;
+        fs_worker_ok = false;
+        fs_worker_job = FS_WORK_NONE;
+        updateMenuActionStates();
+        refreshUi();
+    }
+
     void stepCopyJob() {
         if (!copy_in_progress) return;
         if (copy_cancel_requested) {
+            if (fs_worker_job == FS_WORK_COPY_DIR || fs_worker_job == FS_WORK_COPY_FILE) {
+                // Worker observes cancel flag and exits soon; poll until done.
+                if (fs_worker_done) finishCopyJob(false);
+                return;
+            }
             finishCopyJob(false);
+            return;
+        }
+
+        if (fs_worker_job == FS_WORK_COPY_DIR || fs_worker_job == FS_WORK_COPY_FILE) {
+            if (copy_total_bytes > 0) updateCopyProgressOnPaste(copy_done_bytes, copy_total_bytes);
+            if (fs_worker_done) {
+                if (fs_worker_ok && copy_total_bytes > 0) {
+                    copy_done_files = copy_total_files;
+                    updateCopyProgressOnPaste(copy_total_bytes, copy_total_bytes);
+                }
+                finishCopyJob(fs_worker_ok);
+            }
             return;
         }
 
@@ -2334,12 +2827,26 @@ private:
         uint32_t elapsed_ms = millis() - copy_started_ms;
         if (done > 0 && elapsed_ms >= 250) {
             uint32_t eta_s = (uint32_t)(((uint64_t)(total - done) * elapsed_ms) / done / 1000ULL);
-            String txt = String(LV_SYMBOL_PASTE) + " Paste " + String(pct) + "% " + formatEta(eta_s);
+            String txt;
+            if (copy_is_dir_job && copy_total_files > 0) {
+                txt = String(LV_SYMBOL_PASTE) + " " +
+                      String((unsigned long)copy_done_files) + "/" + String((unsigned long)copy_total_files) +
+                      " " + String(pct) + "% " + formatEta(eta_s);
+            } else {
+                txt = String(LV_SYMBOL_PASTE) + " " + String(pct) + "% " + formatEta(eta_s);
+            }
             lv_label_set_text(menu_paste_label, txt.c_str());
         } else {
-            char paste_txt[32];
-            lv_snprintf(paste_txt, sizeof(paste_txt), LV_SYMBOL_PASTE " Paste %d%%", pct);
-            lv_label_set_text(menu_paste_label, paste_txt);
+            if (copy_is_dir_job && copy_total_files > 0) {
+                String txt = String(LV_SYMBOL_PASTE) + " " +
+                             String((unsigned long)copy_done_files) + "/" + String((unsigned long)copy_total_files) +
+                             " " + String(pct) + "%";
+                lv_label_set_text(menu_paste_label, txt.c_str());
+            } else {
+                char paste_txt[40];
+                lv_snprintf(paste_txt, sizeof(paste_txt), LV_SYMBOL_PASTE " %d%%", pct);
+                lv_label_set_text(menu_paste_label, paste_txt);
+            }
         }
 
         if (menu_copy_cancel_label) {
@@ -2363,7 +2870,7 @@ private:
             File out = LittleFS.open(dp.c_str(), "w");
             if (!out) { in.close(); return false; }
             while (true) {
-                lv_timer_handler();
+                delay(0);
                 if (copy_cancel_requested) {
                     in.close();
                     out.close();
@@ -2374,15 +2881,17 @@ private:
                 if (n <= 0) break;
                 if ((int)out.write(buf, (size_t)n) != n) { in.close(); out.close(); return false; }
                 copied += (size_t)n;
+                copy_done_bytes += (size_t)n;
                 if (show_progress && ((++chunks & 0x03) == 0)) {
-                    updateCopyProgressOnPaste(copied, total_bytes);
+                    updateCopyProgressOnPaste(copy_done_bytes, total_bytes);
                     lv_refr_now(NULL);
                 }
                 delay(0);
             }
             in.close();
             out.close();
-            if (show_progress) updateCopyProgressOnPaste(copied, total_bytes);
+            if (copy_is_dir_job) copy_done_files++;
+            if (show_progress) updateCopyProgressOnPaste(copy_done_bytes, total_bytes);
             return true;
         }
         if (sd == 'D' && dd == 'D' && sd_ready && StorageHelper::getInstance()->isInitialized()) {
@@ -2392,7 +2901,7 @@ private:
             FsFile out = fs.open(dp.c_str(), O_WRONLY | O_CREAT | O_TRUNC);
             if (!out) { in.close(); return false; }
             while (true) {
-                lv_timer_handler();
+                delay(0);
                 if (copy_cancel_requested) {
                     in.close();
                     out.close();
@@ -2403,15 +2912,17 @@ private:
                 if (n <= 0) break;
                 if ((int)out.write(buf, (size_t)n) != n) { in.close(); out.close(); return false; }
                 copied += (size_t)n;
+                copy_done_bytes += (size_t)n;
                 if (show_progress && ((++chunks & 0x03) == 0)) {
-                    updateCopyProgressOnPaste(copied, total_bytes);
+                    updateCopyProgressOnPaste(copy_done_bytes, total_bytes);
                     lv_refr_now(NULL);
                 }
                 delay(0);
             }
             in.close();
             out.close();
-            if (show_progress) updateCopyProgressOnPaste(copied, total_bytes);
+            if (copy_is_dir_job) copy_done_files++;
+            if (show_progress) updateCopyProgressOnPaste(copy_done_bytes, total_bytes);
             return true;
         }
         if (sd == 'L' && dd == 'D' && sd_ready && StorageHelper::getInstance()->isInitialized()) {
@@ -2421,7 +2932,7 @@ private:
             FsFile out = fs.open(dp.c_str(), O_WRONLY | O_CREAT | O_TRUNC);
             if (!out) { in.close(); return false; }
             while (true) {
-                lv_timer_handler();
+                delay(0);
                 if (copy_cancel_requested) {
                     in.close();
                     out.close();
@@ -2432,15 +2943,17 @@ private:
                 if (n <= 0) break;
                 if ((int)out.write(buf, (size_t)n) != n) { in.close(); out.close(); return false; }
                 copied += (size_t)n;
+                copy_done_bytes += (size_t)n;
                 if (show_progress && ((++chunks & 0x03) == 0)) {
-                    updateCopyProgressOnPaste(copied, total_bytes);
+                    updateCopyProgressOnPaste(copy_done_bytes, total_bytes);
                     lv_refr_now(NULL);
                 }
                 delay(0);
             }
             in.close();
             out.close();
-            if (show_progress) updateCopyProgressOnPaste(copied, total_bytes);
+            if (copy_is_dir_job) copy_done_files++;
+            if (show_progress) updateCopyProgressOnPaste(copy_done_bytes, total_bytes);
             return true;
         }
         if (sd == 'D' && dd == 'L' && sd_ready && StorageHelper::getInstance()->isInitialized()) {
@@ -2450,7 +2963,7 @@ private:
             File out = LittleFS.open(dp.c_str(), "w");
             if (!out) { in.close(); return false; }
             while (true) {
-                lv_timer_handler();
+                delay(0);
                 if (copy_cancel_requested) {
                     in.close();
                     out.close();
@@ -2461,15 +2974,17 @@ private:
                 if (n <= 0) break;
                 if ((int)out.write(buf, (size_t)n) != n) { in.close(); out.close(); return false; }
                 copied += (size_t)n;
+                copy_done_bytes += (size_t)n;
                 if (show_progress && ((++chunks & 0x03) == 0)) {
-                    updateCopyProgressOnPaste(copied, total_bytes);
+                    updateCopyProgressOnPaste(copy_done_bytes, total_bytes);
                     lv_refr_now(NULL);
                 }
                 delay(0);
             }
             in.close();
             out.close();
-            if (show_progress) updateCopyProgressOnPaste(copied, total_bytes);
+            if (copy_is_dir_job) copy_done_files++;
+            if (show_progress) updateCopyProgressOnPaste(copy_done_bytes, total_bytes);
             return true;
         }
         return false;
@@ -2514,6 +3029,95 @@ private:
             return sz;
         }
         return 0;
+    }
+
+    void stepDeleteJob() {
+        if (!delete_in_progress) return;
+        if (!fs_worker_done) return;
+        finishDeleteJob();
+    }
+
+    void finishFsJob() {
+        fs_job_in_progress = false;
+        if (fs_job_timer) {
+            lv_timer_del(fs_job_timer);
+            fs_job_timer = nullptr;
+        }
+        fs_worker_job = FS_WORK_NONE;
+        fs_worker_arg1 = "";
+        fs_worker_arg2 = "";
+        fs_worker_done = false;
+        fs_worker_ok = false;
+        list_suspended_for_dialog = false;
+        updateMenuActionStates();
+        refreshUi();
+    }
+
+    void stepFsJob() {
+        if (!fs_job_in_progress) return;
+        if (!fs_worker_done) return;
+        if (fs_worker_job == FS_WORK_SCAN_DIR) {
+            scan_in_progress = false;
+            scan_result_ok = fs_worker_ok;
+            scan_result_ready = true;
+        }
+        finishFsJob();
+    }
+
+    bool ensureFsWorkerTask() {
+        if (fs_worker_task) return true;
+        BaseType_t rc = xTaskCreatePinnedToCore(
+            fs_worker_task_entry,
+            "fm_fs_worker",
+            10240,
+            this,
+            1,
+            &fs_worker_task,
+            1
+        );
+        return rc == pdPASS;
+    }
+
+    bool startFsJob(FsWorkerJobType job, const String& a1, const String& a2, bool refresh_after) {
+        if (fs_job_in_progress || copy_in_progress || delete_in_progress) return false;
+        bool touch_sd = false;
+        if (job == FS_WORK_CREATE_FILE || job == FS_WORK_CREATE_DIR) touch_sd = usesSdPath(a1);
+        else if (job == FS_WORK_RENAME) touch_sd = usesSdPath(a1) || usesSdPath(a2);
+        if (touch_sd) {
+            bool ok = false;
+            if (job == FS_WORK_CREATE_FILE) ok = writeTextFile(a1, "");
+            else if (job == FS_WORK_CREATE_DIR) ok = makeDir(a1);
+            else if (job == FS_WORK_RENAME) ok = renamePath(a1, a2);
+            if (refresh_after) refreshUi();
+            return ok;
+        }
+        if (!ensureFsWorkerTask()) return false;
+        LV_UNUSED(refresh_after);
+        fs_worker_arg1 = a1;
+        fs_worker_arg2 = a2;
+        fs_worker_ok = false;
+        fs_worker_done = false;
+        fs_worker_job = job;
+        fs_job_in_progress = true;
+        updateMenuActionStates();
+        if (!fs_job_timer) fs_job_timer = lv_timer_create(fs_job_timer_cb, 20, this);
+        xTaskNotifyGive(fs_worker_task);
+        return true;
+    }
+
+    bool startScanJob(const String& vpath) {
+        if (scan_in_progress || fs_job_in_progress || copy_in_progress || delete_in_progress) return false;
+        if (!ensureFsWorkerTask()) return false;
+        fs_worker_scan_items.clear();
+        fs_worker_scan_vpath = vpath;
+        fs_worker_ok = false;
+        fs_worker_done = false;
+        fs_worker_job = FS_WORK_SCAN_DIR;
+        scan_in_progress = true;
+        fs_job_in_progress = true;
+        if (!fs_job_timer) fs_job_timer = lv_timer_create(fs_job_timer_cb, 20, this);
+        xTaskNotifyGive(fs_worker_task);
+        return true;
     }
 
     bool getEntryInfo(const String& vpath, bool& is_dir, uint32_t& file_count, uint64_t& file_size) {
