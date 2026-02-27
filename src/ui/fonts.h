@@ -1,9 +1,9 @@
-#ifndef FONT_MANAGER_H
-#define FONT_MANAGER_H
+#ifndef FONTS_H
+#define FONTS_H
 
 #include <Arduino.h>
 #include <lvgl.h>
-#include "../font/font_provider.h"
+#include "../font/provider.h"
 
 class FontManager {
 private:

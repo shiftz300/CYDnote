@@ -17,9 +17,9 @@
 #include <XPT2046_Touchscreen.h>
 
 #include "config.h"
-#include "app_manager.h"
-#include "ui/font_manager.h"
-#include "utils/sd_helper.h"
+#include "app.h"
+#include "ui/fonts.h"
+#include "utils/storage.h"
 
 // Application manager instance
 AppManager* app = nullptr;

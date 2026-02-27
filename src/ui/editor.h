@@ -5,8 +5,8 @@
 #include <functional>
 #include <string.h>
 #include "../config.h"
-#include "font_manager.h"
-#include "../ime/custom_pinyin_dict_plus.h"
+#include "fonts.h"
+#include "../ime/pinyin.h"
 
 class Editor {
 private:

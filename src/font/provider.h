@@ -1,5 +1,5 @@
-#ifndef FONT_PROVIDER_H
-#define FONT_PROVIDER_H
+#ifndef PROVIDER_H
+#define PROVIDER_H
 
 #include <lvgl.h>
 

@@ -1,11 +1,11 @@
-#ifndef IMAGE_VIEWER_H
-#define IMAGE_VIEWER_H
+#ifndef VIEWER_H
+#define VIEWER_H
 
 #include <Arduino.h>
 #include <lvgl.h>
 #include <functional>
 #include "../config.h"
-#include "font_manager.h"
+#include "fonts.h"
 
 class ImageViewer {
 private:

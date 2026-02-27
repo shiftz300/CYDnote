@@ -1,5 +1,5 @@
-#ifndef SD_HELPER_H
-#define SD_HELPER_H
+#ifndef STORAGE_H
+#define STORAGE_H
 
 #include <Arduino.h>
 #include <SPI.h>

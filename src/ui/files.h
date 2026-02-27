@@ -1,5 +1,5 @@
-#ifndef FILE_MANAGER_H
-#define FILE_MANAGER_H
+#ifndef FILES_H
+#define FILES_H
 
 #include <Arduino.h>
 #include <LittleFS.h>
@@ -10,9 +10,9 @@
 #include <lvgl.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include "../utils/sd_helper.h"
-#include "font_manager.h"
-#include "../ime/custom_pinyin_dict_plus.h"
+#include "../utils/storage.h"
+#include "fonts.h"
+#include "../ime/pinyin.h"
 
 class FileManager {
 private:
@@ -699,16 +699,6 @@ private:
         FileManager* fm = (FileManager*)lv_event_get_user_data(e);
         if (!fm) return;
         fm->copy_cancel_requested = true;
-    }
-
-    static void menu_info_event_cb(lv_event_t* e) {
-        FileManager* fm = (FileManager*)lv_event_get_user_data(e);
-        if (!fm) return;
-        fm->exitRemoveModeIfNeeded(true);
-        fm->exitCopyPickModeIfNeeded(false);
-        fm->exitMovePickModeIfNeeded(false);
-        if (fm->selected_vpath.length() == 0) return;
-        fm->openEntryInfoDialog(fm->selected_vpath);
     }
 
     static void sidebar_info_event_cb(lv_event_t* e) {

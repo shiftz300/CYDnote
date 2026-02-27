@@ -1,18 +1,24 @@
-#ifndef AP_SHARE_SERVICE_H
-#define AP_SHARE_SERVICE_H
+#ifndef SHARE_H
+#define SHARE_H
 
 #include <Arduino.h>
 #include <LittleFS.h>
 #include <WiFi.h>
 #include <WebServer.h>
 #include <DNSServer.h>
-#include "sd_helper.h"
+#include <esp_heap_caps.h>
+#include "storage.h"
 
 class ApShareService {
 private:
     static constexpr size_t SHARE_LIST_MAX_ENTRIES = 1200;
     static constexpr uint32_t TOGGLE_DEBOUNCE_MS = 700;
     static constexpr uint32_t WIFI_OFF_DELAY_MS = 2500;
+    static constexpr size_t UPLOAD_WRITE_SLICE = 256;
+    static constexpr size_t UPLOAD_WRITE_SLICE_LOW_MEM = 128;
+    static constexpr size_t UPLOAD_YIELD_EVERY_BYTES = 1024;
+    static constexpr size_t UPLOAD_MIN_FREE_HEAP = 24UL * 1024UL;
+    static constexpr size_t UPLOAD_SYNC_EVERY_BYTES = 8192;
 
     StorageHelper* sd_helper;
     WebServer* server;
@@ -30,8 +36,10 @@ private:
     bool upload_ok;
     bool upload_failed;
     size_t upload_bytes;
+    size_t upload_sync_bytes;
     String upload_vpath;
     String upload_error;
+    bool upload_active;
     bool upload_batch_active;
     size_t upload_batch_total;
     size_t upload_batch_ok;
@@ -43,7 +51,8 @@ public:
         : sd_helper(nullptr), server(nullptr), dns(nullptr), running(false), switching(false),
           last_toggle_ms(0), wifi_off_pending(false), wifi_off_due_ms(0), ssid("CYDnote-Share"),
           upload_drive('L'), upload_ok(false), upload_failed(false), upload_bytes(0),
-                    upload_vpath(""), upload_error(""), upload_batch_active(false),
+                    upload_sync_bytes(0),
+                    upload_vpath(""), upload_error(""), upload_active(false), upload_batch_active(false),
                     upload_batch_total(0), upload_batch_ok(0), upload_batch_fail(0), upload_batch_error("") {}
 
     void init(StorageHelper* helper) { sd_helper = helper; }
@@ -312,6 +321,7 @@ private:
 
         server->on("/", HTTP_GET, [this]() { server->send(200, "text/html; charset=utf-8", buildPage()); });
         server->on("/list", HTTP_GET, [this]() {
+            if (upload_active) return server->send(503, "text/html; charset=utf-8", "<li class='dim'>upload in progress...</li>");
             String vpath, err;
             if (!parsePathArg(server->arg("path"), server->arg("drive"), true, vpath, err)) return server->send(400, "text/html; charset=utf-8", "<li class='err'>Invalid</li>");
             char d = driveFromVPath(vpath);
@@ -350,6 +360,7 @@ private:
         });
 
         server->on("/download", HTTP_GET, [this]() {
+            if (upload_active) return server->send(503, "text/plain", "upload in progress");
             String vpath, err;
             if (!parsePathArg(server->arg("path"), server->arg("drive"), false, vpath, err)) return server->send(400, "text/plain", "invalid request");
             char d = driveFromVPath(vpath);
@@ -387,9 +398,11 @@ private:
             upload_batch_ok = 0;
             upload_batch_fail = 0;
             upload_batch_error = "";
+            upload_active = false;
         }, [this]() {
             HTTPUpload& up = server->upload();
             if (up.status == UPLOAD_FILE_START) {
+                upload_active = true;
                 if (!upload_batch_active) {
                     upload_batch_active = true;
                     upload_batch_total = 0;
@@ -399,7 +412,7 @@ private:
                 }
                 upload_batch_total++;
 
-                closeUploadHandles(); upload_ok = false; upload_failed = false; upload_bytes = 0; upload_vpath = ""; upload_error = "";
+                closeUploadHandles(); upload_ok = false; upload_failed = false; upload_bytes = 0; upload_sync_bytes = 0; upload_vpath = ""; upload_error = "";
                 String req = server->hasArg("path") ? server->arg("path") : "/";
                 String drv = server->hasArg("drive") ? server->arg("drive") : "";
                 if (req.length() == 0) req = "/";
@@ -438,18 +451,43 @@ private:
                 }
             } else if (up.status == UPLOAD_FILE_WRITE) {
                 if (!upload_ok || upload_failed) return;
-                upload_bytes += up.currentSize;
-                size_t w = 0;
-                if (upload_drive == 'L' && upload_lfs) w = upload_lfs.write(up.buf, up.currentSize);
-                else if (upload_drive == 'D' && upload_sd.isOpen()) w = upload_sd.write(up.buf, up.currentSize);
-                if (w != up.currentSize) {
-                    upload_ok = false; upload_failed = true; upload_error = "write failed";
-                    closeUploadHandles(); if (upload_vpath.length()) removeVPath(upload_vpath);
-                    upload_batch_fail++;
-                    if (!upload_batch_error.length()) upload_batch_error = upload_error;
+                size_t off = 0;
+                while (off < up.currentSize) {
+                    size_t chunk = up.currentSize - off;
+                    size_t slice = UPLOAD_WRITE_SLICE;
+                    size_t free_heap = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+                    if (free_heap < UPLOAD_MIN_FREE_HEAP) slice = UPLOAD_WRITE_SLICE_LOW_MEM;
+                    if (chunk > slice) chunk = slice;
+
+                    size_t w = 0;
+                    if (upload_drive == 'L' && upload_lfs) w = upload_lfs.write(up.buf + off, chunk);
+                    else if (upload_drive == 'D' && upload_sd.isOpen()) w = upload_sd.write(up.buf + off, chunk);
+                    if (w != chunk) {
+                        upload_ok = false; upload_failed = true; upload_error = "write failed";
+                        closeUploadHandles(); if (upload_vpath.length()) removeVPath(upload_vpath);
+                        upload_batch_fail++;
+                        if (!upload_batch_error.length()) upload_batch_error = upload_error;
+                        return;
+                    }
+
+                    off += chunk;
+                    upload_bytes += chunk;
+                    upload_sync_bytes += chunk;
+                    delay(0);
+                    if (upload_bytes >= UPLOAD_YIELD_EVERY_BYTES) {
+                        upload_bytes = 0;
+                        delay(0);
+                    }
+                    if (upload_drive == 'D' && upload_sd.isOpen() && upload_sync_bytes >= UPLOAD_SYNC_EVERY_BYTES) {
+                        upload_sd.sync();
+                        upload_sync_bytes = 0;
+                        delay(0);
+                    }
                 }
             } else if (up.status == UPLOAD_FILE_END) {
+                if (upload_drive == 'D' && upload_sd.isOpen()) upload_sd.sync();
                 closeUploadHandles();
+                delay(0);
                 if (!upload_failed) {
                     upload_ok = true;
                     upload_batch_ok++;
@@ -460,6 +498,7 @@ private:
                 upload_ok = false; upload_failed = true; upload_error = "upload aborted";
                 upload_batch_fail++;
                 if (!upload_batch_error.length()) upload_batch_error = upload_error;
+                upload_active = false;
             }
         });
 
@@ -480,7 +519,7 @@ private:
         if (dns) { dns->stop(); delete dns; dns = nullptr; }
         if (server) { server->stop(); delete server; server = nullptr; }
         closeUploadHandles();
-        upload_vpath = ""; upload_ok = false; upload_failed = false; upload_bytes = 0; upload_error = "";
+        upload_vpath = ""; upload_ok = false; upload_failed = false; upload_bytes = 0; upload_error = ""; upload_active = false;
         WiFi.softAPdisconnect(true);
         running = false;
         wifi_off_pending = true;

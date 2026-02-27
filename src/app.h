@@ -1,5 +1,5 @@
- #ifndef APP_MANAGER_H
-#define APP_MANAGER_H
+#ifndef APP_H
+#define APP_H
 
 #include <Arduino.h>
 #include <LittleFS.h>
@@ -7,14 +7,14 @@
 #include <vector>
 #include <algorithm>
 #include "config.h"
-#include "utils/sd_helper.h"
-#include "utils/ap_share_service.h"
+#include "utils/storage.h"
+#include "utils/share.h"
 
 // For readability in AppManager context
 using SDHelper = StorageHelper;
-#include "ui/file_manager.h"
+#include "ui/files.h"
 #include "ui/editor.h"
-#include "ui/image_viewer.h"
+#include "ui/viewer.h"
 #include "ui/menu.h"
 
 class AppManager {
