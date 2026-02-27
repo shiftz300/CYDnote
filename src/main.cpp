@@ -50,9 +50,9 @@ static int last_touch_x = -1;
 static int last_touch_y = -1;
 static bool touch_has_last = false;
 
-// Touch tuning (lower sensitivity)
+// Touch tuning (higher responsiveness)
 static const int TOUCH_MIN_PRESSURE = 220;
-static const int TOUCH_DEADZONE_PX = 3;
+static const int TOUCH_DEADZONE_PX = 1;
 
 // DMA-capable LVGL draw buffers (allocated at runtime)
 static uint8_t* draw_buf_1 = nullptr;
@@ -71,16 +71,22 @@ static const uint8_t BL_MIN_PCT = 25;                // keep minimum readable br
 static const uint8_t BL_MAX_PCT = 85;                // keep headroom so change is visible
 static const uint32_t CDS_SAMPLE_MS = 90;            // slower sampling for dark stability
 static const float BL_SMOOTH_ALPHA = 0.22f;          // less jumpy
+static const float BL_FAST_ALPHA = 0.42f;            // faster response for large changes
 static const float BL_GAMMA = 1.8f;                  // bright-zone curve
 static const bool CDS_INVERT = true;                 // light -> brighter
 static const float BL_MAX_STEP_PCT = 2.0f;           // max brightness step per sample
+static const float BL_FAST_MAX_STEP_PCT = 4.0f;      // max step when large ambient change
+static const float BL_FAST_DIFF_PCT = 8.0f;          // threshold for fast response mode
 static const float BL_DARK_ZONE = 0.35f;             // 0..35% ambient treated as dark zone
 static const float BL_DARK_GAIN = 0.12f;             // dark zone uses only 12% of total range
 static const float BL_ULTRA_DARK_ZONE = 0.10f;       // first 10%: extra compressed
 static const float BL_ULTRA_DARK_GAIN = 0.02f;       // first 10% uses only 2% of range
 static const float BL_DARK_HYSTERESIS_PCT = 1.0f;    // low-light anti-flicker deadband
-static const uint8_t BL_DARK_RISE_CONFIRM_SAMPLES = 4; // require sustained rise in dark
+static const uint8_t BL_DARK_RISE_CONFIRM_SAMPLES = 7; // require sustained rise in dark
 static const float BL_DARK_MAX_STEP_PCT = 0.8f;      // smaller step in dark
+static const float BL_DARK_RISE_MAX_STEP_PCT = 0.25f; // very small rise step in dark to prevent flashes
+static const float BL_DARK_EXIT_MARGIN = 0.07f;       // must exceed dark zone by margin to unlock
+static const uint8_t BL_DARK_EXIT_CONFIRM_SAMPLES = 5; // sustained bright samples to exit dark lock
 static const int BL_MIN_SPAN_FOR_DYNAMIC = 64;       // avoid tiny span amplification
 
 static bool backlight_pwm_ready = false;
@@ -92,6 +98,8 @@ static int cds_obs_max = 0;
 static uint16_t cds_samples[5] = {0, 0, 0, 0, 0};
 static uint8_t cds_sample_idx = 0;
 static uint8_t dark_rise_confirm = 0;
+static uint8_t dark_exit_confirm = 0;
+static bool bl_dark_lock = true;
 
 static inline void backlightWritePct(uint8_t pct) {
   if (pct < BL_MIN_PCT) pct = BL_MIN_PCT;
@@ -188,8 +196,27 @@ static void backlightAutoUpdate() {
     target_pct += (span_pct * BL_DARK_GAIN) + yb * (span_pct * (1.0f - BL_DARK_GAIN));
   }
 
-  // Low-light anti-flicker: ignore tiny brightness changes in dark zone.
-  if (t <= BL_DARK_ZONE) {
+  // Dark-lock state machine:
+  // - Enter dark lock quickly when ambient goes dark.
+  // - Exit only after sustained brighter readings.
+  if (bl_dark_lock) {
+    if (t > (BL_DARK_ZONE + BL_DARK_EXIT_MARGIN)) {
+      if (dark_exit_confirm < BL_DARK_EXIT_CONFIRM_SAMPLES) dark_exit_confirm++;
+      if (dark_exit_confirm >= BL_DARK_EXIT_CONFIRM_SAMPLES) {
+        bl_dark_lock = false;
+        dark_exit_confirm = 0;
+      }
+    } else {
+      dark_exit_confirm = 0;
+    }
+  } else if (t <= BL_DARK_ZONE) {
+    bl_dark_lock = true;
+    dark_exit_confirm = 0;
+    dark_rise_confirm = 0;
+  }
+
+  // Low-light anti-flicker: keep dark environment stable.
+  if (bl_dark_lock) {
     float diff = target_pct - bl_smoothed_pct;
     if (fabsf(diff) < BL_DARK_HYSTERESIS_PCT) return;
     // In dark: only brighten after several consecutive confirmations.
@@ -204,9 +231,21 @@ static void backlightAutoUpdate() {
   } else {
     dark_rise_confirm = 0;
   }
-  float alpha = (t <= BL_DARK_ZONE) ? 0.12f : BL_SMOOTH_ALPHA;
-  float max_step = (t <= BL_DARK_ZONE) ? BL_DARK_MAX_STEP_PCT : BL_MAX_STEP_PCT;
-  float delta = (target_pct - bl_smoothed_pct) * alpha;
+  float diff = target_pct - bl_smoothed_pct;
+  float abs_diff = fabsf(diff);
+  float alpha = BL_SMOOTH_ALPHA;
+  float max_step = BL_MAX_STEP_PCT;
+
+  if (bl_dark_lock) {
+    alpha = 0.10f;
+    max_step = (diff > 0.0f) ? BL_DARK_RISE_MAX_STEP_PCT : BL_DARK_MAX_STEP_PCT;
+  } else if (abs_diff >= BL_FAST_DIFF_PCT) {
+    // Large brightness changes respond faster.
+    alpha = BL_FAST_ALPHA;
+    max_step = BL_FAST_MAX_STEP_PCT;
+  }
+
+  float delta = diff * alpha;
   if (delta > max_step) delta = max_step;
   if (delta < -max_step) delta = -max_step;
   bl_smoothed_pct += delta;
@@ -445,14 +484,14 @@ void touchscreen_read(lv_indev_t * indev, lv_indev_data_t * data) {
     mapped_x = constrain(mapped_x, 0, SCREEN_WIDTH - 1);
     mapped_y = constrain(mapped_y, 0, SCREEN_HEIGHT - 1);
 
-    // Simple low-pass filter + deadzone to reduce sensitivity and jitter
+    // Lighter low-pass + smaller deadzone for better follow feel
     if (!touch_has_last) {
       last_touch_x = mapped_x;
       last_touch_y = mapped_y;
       touch_has_last = true;
     } else {
-      int filtered_x = (last_touch_x * 7 + mapped_x * 3) / 10;
-      int filtered_y = (last_touch_y * 7 + mapped_y * 3) / 10;
+      int filtered_x = (last_touch_x * 2 + mapped_x * 8) / 10;
+      int filtered_y = (last_touch_y * 2 + mapped_y * 8) / 10;
       if (abs(filtered_x - last_touch_x) < TOUCH_DEADZONE_PX) filtered_x = last_touch_x;
       if (abs(filtered_y - last_touch_y) < TOUCH_DEADZONE_PX) filtered_y = last_touch_y;
       last_touch_x = filtered_x;

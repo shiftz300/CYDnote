@@ -6,8 +6,6 @@
 #include <lvgl.h>
 #include <vector>
 #include <algorithm>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
 #include "config.h"
 #include "utils/sd_helper.h"
 #include "utils/ap_share_service.h"
@@ -31,22 +29,6 @@ private:
     MenuManager menu_manager;
     SDHelper* sd_helper;
     ApShareService ap_share;
-    enum IoJobType { IO_JOB_NONE = 0, IO_JOB_SAVE = 1, IO_JOB_READ = 2 };
-    TaskHandle_t io_worker_task;
-    volatile IoJobType io_job_type;
-    volatile bool io_save_pending;
-    volatile bool io_save_done;
-    volatile bool io_save_ok;
-    bool io_save_had_old;
-    uint64_t io_save_old_size;
-    uint64_t io_save_new_size;
-    String io_save_path;
-    String io_save_data;
-    volatile bool io_read_pending;
-    volatile bool io_read_done;
-    volatile bool io_read_ok;
-    String io_read_path;
-    String io_read_content;
     String current_filename;
     std::vector<String> image_gallery;
     int image_index;
@@ -55,7 +37,7 @@ private:
     static AppManager* instance;
     
 public:
-    AppManager() : current_mode(MODE_FILE_MANAGER), sd_helper(nullptr), io_worker_task(nullptr), io_job_type(IO_JOB_NONE), io_save_pending(false), io_save_done(false), io_save_ok(false), io_save_had_old(false), io_save_old_size(0), io_save_new_size(0), io_save_path(""), io_save_data(""), io_read_pending(false), io_read_done(false), io_read_ok(false), io_read_path(""), io_read_content(""), image_index(-1) {
+    AppManager() : current_mode(MODE_FILE_MANAGER), sd_helper(nullptr), image_index(-1) {
         instance = this;
     }
     
@@ -113,14 +95,8 @@ private:
         current_filename = filename;
         editor.setTitle(filename);
         editor.setText("");
-        if (driveOf(filename) == 'D') {
-            String content;
-            if (readVirtualFile(filename, content)) editor.setText(content);
-        } else if (!queueAsyncRead(filename)) {
-            // Fallback when worker is busy/unavailable.
-            String content;
-            if (readVirtualFile(filename, content)) editor.setText(content);
-        }
+        String content;
+        if (readVirtualFile(filename, content)) editor.setText(content);
 
         editor.show(LV_SCR_LOAD_ANIM_FADE_IN);
     }
@@ -137,39 +113,8 @@ public:
     }
     
     void update() {
-        // Avoid AP share FS polling while heavy copy is running (cross-core FS contention).
-        if (!file_manager.isFsBusy() && !io_save_pending && !io_read_pending) ap_share.update();
-
-        if (io_save_done) {
-            bool ok = io_save_ok;
-            String saved = io_save_path;
-            uint64_t old_size = io_save_old_size;
-            uint64_t new_size = io_save_new_size;
-            bool had_old = io_save_had_old;
-            io_save_done = false;
-            io_save_pending = false;
-            io_save_data = "";
-            if (ok) {
-                String from_h = had_old ? formatBytesHuman(old_size) : "0 B";
-                String to_h = formatBytesHuman(new_size);
-                editor.showSaveSuccessPopup(fileNameOf(saved), from_h, to_h);
-                Serial.println("File saved: " + saved);
-            } else {
-                Serial.println("Save failed!");
-            }
-        }
-
-        if (io_read_done) {
-            bool ok = io_read_ok;
-            String path = io_read_path;
-            String content = io_read_content;
-            io_read_done = false;
-            io_read_pending = false;
-            io_read_content = "";
-            if (current_mode == MODE_EDITOR && current_filename == path) {
-                editor.setText(ok ? content : "");
-            }
-        }
+        // Avoid AP share FS polling while heavy file operations are running.
+        if (!file_manager.isFsBusy()) ap_share.update();
 
         // Check menu actions
         MenuAction action = menu_manager.getLastAction();
@@ -202,22 +147,18 @@ public:
             current_filename = "L:/note.txt";
         }
         String content = editor.getText();
-        if (driveOf(current_filename) == 'D') {
-            uint64_t old_size = 0;
-            bool had_old = getVirtualFileSize(current_filename, old_size);
-            if (writeVirtualFile(current_filename, content)) {
-                uint64_t new_size = 0;
-                bool has_new = getVirtualFileSize(current_filename, new_size);
-                if (!has_new) new_size = (uint64_t)content.length();
-                String from_h = had_old ? formatBytesHuman(old_size) : "0 B";
-                String to_h = formatBytesHuman(new_size);
-                editor.showSaveSuccessPopup(fileNameOf(current_filename), from_h, to_h);
-                Serial.println("File saved: " + current_filename);
-            } else {
-                Serial.println("Save failed!");
-            }
-        } else if (!queueAsyncSave(current_filename, content)) {
-            Serial.println("Save skipped (busy)");
+        uint64_t old_size = 0;
+        bool had_old = getVirtualFileSize(current_filename, old_size);
+        if (writeVirtualFile(current_filename, content)) {
+            uint64_t new_size = 0;
+            bool has_new = getVirtualFileSize(current_filename, new_size);
+            if (!has_new) new_size = (uint64_t)content.length();
+            String from_h = had_old ? formatBytesHuman(old_size) : "0 B";
+            String to_h = formatBytesHuman(new_size);
+            editor.showSaveSuccessPopup(fileNameOf(current_filename), from_h, to_h);
+            Serial.println("File saved: " + current_filename);
+        } else {
+            Serial.println("Save failed!");
         }
     }
     
@@ -264,74 +205,10 @@ public:
     }
 
     bool isBusy() const {
-        return file_manager.isFsBusy() || io_save_pending || io_read_pending;
+        return file_manager.isFsBusy();
     }
 
 private:
-    static void io_worker_entry(void* arg) {
-        AppManager* am = (AppManager*)arg;
-        if (!am) { vTaskDelete(nullptr); return; }
-        while (true) {
-            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-            if (am->io_job_type == IO_JOB_SAVE) {
-                bool ok = false;
-                uint64_t old_size = 0, new_size = 0;
-                bool had_old = am->getVirtualFileSize(am->io_save_path, old_size);
-                ok = am->writeVirtualFile(am->io_save_path, am->io_save_data);
-                if (ok) {
-                    if (!am->getVirtualFileSize(am->io_save_path, new_size)) {
-                        new_size = (uint64_t)am->io_save_data.length();
-                    }
-                }
-                am->io_save_had_old = had_old;
-                am->io_save_old_size = old_size;
-                am->io_save_new_size = new_size;
-                am->io_save_ok = ok;
-                am->io_save_done = true;
-                am->io_job_type = IO_JOB_NONE;
-            } else if (am->io_job_type == IO_JOB_READ) {
-                String out;
-                bool ok = am->readVirtualFile(am->io_read_path, out);
-                am->io_read_content = out;
-                am->io_read_ok = ok;
-                am->io_read_done = true;
-                am->io_job_type = IO_JOB_NONE;
-            }
-        }
-    }
-
-    bool ensureIoWorker() {
-        if (io_worker_task) return true;
-        BaseType_t rc = xTaskCreatePinnedToCore(io_worker_entry, "app_io_worker", 8192, this, 1, &io_worker_task, 1);
-        return rc == pdPASS;
-    }
-
-    bool queueAsyncSave(const String& vpath, const String& data) {
-        if (io_save_pending || io_read_pending || io_job_type != IO_JOB_NONE) return false;
-        if (!ensureIoWorker()) return false;
-        io_save_path = vpath;
-        io_save_data = data;
-        io_save_ok = false;
-        io_save_done = false;
-        io_save_pending = true;
-        io_job_type = IO_JOB_SAVE;
-        xTaskNotifyGive(io_worker_task);
-        return true;
-    }
-
-    bool queueAsyncRead(const String& vpath) {
-        if (io_save_pending || io_read_pending || io_job_type != IO_JOB_NONE) return false;
-        if (!ensureIoWorker()) return false;
-        io_read_path = vpath;
-        io_read_content = "";
-        io_read_ok = false;
-        io_read_done = false;
-        io_read_pending = true;
-        io_job_type = IO_JOB_READ;
-        xTaskNotifyGive(io_worker_task);
-        return true;
-    }
-
     bool readVirtualFile(const String& vpath, String& out) {
         char drive = driveOf(vpath);
         String path = innerPathOf(vpath);
@@ -339,10 +216,18 @@ private:
             File f = LittleFS.open(path.c_str(), "r");
             if (!f) return false;
             out = "";
-            while (f.available()) {
-                int c = f.read();
-                if (c < 0) break;
-                out += (char)c;
+            size_t file_size = (size_t)f.size();
+            if (file_size > 0) out.reserve(file_size + 1);
+            static constexpr size_t CHUNK = 1024;
+            char buf[CHUNK + 1];
+            while (true) {
+                int n = f.read((uint8_t*)buf, CHUNK);
+                if (n <= 0) break;
+                buf[n] = '\0';
+                if (!out.concat(buf, (unsigned int)n)) {
+                    f.close();
+                    return false;
+                }
             }
             f.close();
             return true;

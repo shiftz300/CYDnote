@@ -13,7 +13,6 @@ private:
     static constexpr size_t SHARE_LIST_MAX_ENTRIES = 1200;
     static constexpr uint32_t TOGGLE_DEBOUNCE_MS = 700;
     static constexpr uint32_t WIFI_OFF_DELAY_MS = 2500;
-    static constexpr size_t UPLOAD_MAX_BYTES = 512UL * 1024UL;
 
     StorageHelper* sd_helper;
     WebServer* server;
@@ -33,13 +32,19 @@ private:
     size_t upload_bytes;
     String upload_vpath;
     String upload_error;
+    bool upload_batch_active;
+    size_t upload_batch_total;
+    size_t upload_batch_ok;
+    size_t upload_batch_fail;
+    String upload_batch_error;
 
 public:
     ApShareService()
         : sd_helper(nullptr), server(nullptr), dns(nullptr), running(false), switching(false),
           last_toggle_ms(0), wifi_off_pending(false), wifi_off_due_ms(0), ssid("CYDnote-Share"),
           upload_drive('L'), upload_ok(false), upload_failed(false), upload_bytes(0),
-          upload_vpath(""), upload_error("") {}
+                    upload_vpath(""), upload_error(""), upload_batch_active(false),
+                    upload_batch_total(0), upload_batch_ok(0), upload_batch_fail(0), upload_batch_error("") {}
 
     void init(StorageHelper* helper) { sd_helper = helper; }
 
@@ -88,14 +93,6 @@ private:
         if (d == 'L') return true;
         if (d == 'D') return sd_helper && sd_helper->isInitialized();
         return false;
-    }
-
-    static bool isAllowedTextFile(const String& p) {
-        int dot = p.lastIndexOf('.');
-        if (dot < 0) return false;
-        String ext = p.substring(dot + 1);
-        ext.toLowerCase();
-        return (ext == "txt" || ext == "md" || ext == "csv" || ext == "log" || ext == "json");
     }
 
     static String htmlEscape(const String& s) {
@@ -258,16 +255,46 @@ private:
 
     String buildPage(const String& msg = "") const {
         String html;
-        html.reserve(2800);
+        html.reserve(5200);
         html += "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>";
-        html += "<title>CYDnote Share</title><style>body{font-family:sans-serif;background:#111;color:#eee;margin:14px}a{color:#8ed1ff}input,button,select{padding:8px;margin:4px 0;background:#222;color:#eee;border:1px solid #444;border-radius:6px}section{border:1px solid #333;border-radius:8px;padding:10px;margin:10px 0}.ok{color:#9ff7b5}.err{color:#ff9ea2}ul{margin:6px 0 0 16px;padding:0}li{margin:2px 0}.dim{color:#888}</style></head><body>";
+        html += "<title>CYDnote Share</title><style>";
+        html += "body{font-family:sans-serif;background:#111;color:#eee;margin:14px}";
+        html += "a{color:#8ed1ff}";
+        html += "input,button,select{padding:8px;margin:4px 0;background:#222;color:#eee;border:1px solid #444;border-radius:6px}";
+        html += "section{border:1px solid #333;border-radius:8px;padding:10px;margin:10px 0}";
+        html += ".ok{color:#9ff7b5}.err{color:#ff9ea2}.dim{color:#888}.hint{color:#b8dfff;font-size:.92em}";
+        html += "ul{margin:6px 0 0 16px;padding:0}li{margin:2px 0}";
+        html += "#dest_badge{display:inline-block;padding:4px 8px;border:1px solid #3a4b5a;border-radius:999px;background:#16202a;color:#bfe0ff}";
+        html += "</style></head><body>";
         html += "<h3>CYDnote Hotspot Transfer</h3>";
-        html += "<div><b>Text files only</b> (.txt/.md/.csv/.log/.json), max upload 512KB</div>";
+        html += "<div><b>Any file type</b></div>";
         if (msg.length()) html += "<div class='" + String(msg.startsWith("OK:") ? "ok" : "err") + "'>" + htmlEscape(msg) + "</div>";
-        html += "<section><h4>Upload</h4><form method='POST' action='/upload' enctype='multipart/form-data'><div>Drive: <select name='drive'><option value='L'>L:/</option><option value='D'>D:/</option></select></div><div>Path: <input name='path' placeholder='/notes/test.txt'></div><input type='file' name='file' accept='.txt,.md,.csv,.log,.json'><br><button type='submit'>Upload</button></form></section>";
+
+        html += "<section><h4>Upload</h4>";
+        html += "<form id='up_form' method='POST' action='/upload' enctype='multipart/form-data'>";
+        html += "<div>Drive: <select id='up_drive' name='drive'><option value='L'>L:/</option><option value='D'>D:/</option></select></div>";
+        html += "<div>Destination folder: <input id='up_path' name='path' placeholder='/' value='/'></div>";
+        html += "<div class='hint'>Tip: click any folder in List to set destination quickly.</div>";
+        html += "<input type='file' name='file' multiple><br>";
+        html += "<button type='submit'>Upload selected files</button>";
+        html += "<div id='up_prog_wrap' class='dim' style='display:none;margin-top:6px'><div id='up_prog_txt'>Uploading: 0%</div><progress id='up_prog_bar' value='0' max='100' style='width:100%'></progress></div>";
+        html += "</form></section>";
+
         html += "<section><h4>Download</h4><form method='GET' action='/download'><div>Drive: <select name='drive'><option value='L'>L:/</option><option value='D'>D:/</option></select></div><div>Path: <input name='path' placeholder='/readme.md'></div><button type='submit'>Download</button></form></section>";
-        html += "<section><h4>List</h4><form method='GET' action='/'><button type='submit'>Refresh</button></form><ul><li><details class='dir' data-drive='L' data-path='/' open><summary>L:/</summary><ul class='children'></ul></details></li><li><details class='dir' data-drive='D' data-path='/' open><summary>D:/</summary><ul class='children'></ul></details></li></ul>";
-        html += "<script>async function L(d){const u=d.querySelector('ul.children');if(!u||d.dataset.loaded==='1')return;u.innerHTML='<li class=\"dim\">loading...</li>';const r=await fetch('/list?drive='+encodeURIComponent(d.dataset.drive)+'&path='+encodeURIComponent(d.dataset.path));u.innerHTML=r.ok?await r.text():'<li class=\"err\">load failed</li>';d.dataset.loaded='1';B(u);}function B(root){(root||document).querySelectorAll('details.dir').forEach(d=>{if(d.dataset.bound==='1')return;d.dataset.bound='1';d.addEventListener('toggle',()=>{if(d.open)L(d);});if(d.open)L(d);});}B(document);</script></section></body></html>";
+        html += "<section><h4>List</h4>";
+        html += "<div>Upload destination: <span id='dest_badge'>L:/</span></div>";
+        html += "<form method='GET' action='/'><button type='submit'>Refresh</button></form>";
+        html += "<ul><li><details class='dir' data-drive='L' data-path='/' open><summary>L:/</summary><ul class='children'></ul></details></li><li><details class='dir' data-drive='D' data-path='/' open><summary>D:/</summary><ul class='children'></ul></details></li></ul>";
+        html += "<script>";
+        html += "function N(p){if(!p||p==='')return '/';return p.startsWith('/')?p:('/'+p);}";
+        html += "function U(){const d=document.getElementById('up_drive');const p=document.getElementById('up_path');const b=document.getElementById('dest_badge');if(!d||!p||!b)return;b.textContent=(d.value||'L')+':'+N(p.value||'/');}";
+        html += "function S(d,p){const ds=document.getElementById('up_drive');const ps=document.getElementById('up_path');if(!ds||!ps)return;ds.value=d||'L';ps.value=N(p||'/');U();}";
+        html += "async function L(d){const u=d.querySelector('ul.children');if(!u||d.dataset.loaded==='1')return;u.innerHTML='<li class=\"dim\">loading...</li>';try{const r=await fetch('/list?drive='+encodeURIComponent(d.dataset.drive)+'&path='+encodeURIComponent(d.dataset.path));u.innerHTML=r.ok?await r.text():'<li class=\"err\">load failed</li>';}catch(_){u.innerHTML='<li class=\"err\">load failed</li>';}d.dataset.loaded='1';B(u);} ";
+        html += "function B(root){(root||document).querySelectorAll('details.dir').forEach(d=>{if(d.dataset.bound==='1')return;d.dataset.bound='1';const s=d.querySelector('summary');if(s){s.addEventListener('click',()=>{S(d.dataset.drive,d.dataset.path);});}d.addEventListener('toggle',()=>{if(d.open)L(d);});if(d.open)L(d);});}";
+        html += "function P(v){const w=document.getElementById('up_prog_wrap');const t=document.getElementById('up_prog_txt');const b=document.getElementById('up_prog_bar');if(!w||!t||!b)return;w.style.display='block';b.value=v;t.textContent='Uploading: '+v+'%';}";
+        html += "const F=document.getElementById('up_form');if(F&&window.XMLHttpRequest){F.addEventListener('submit',function(ev){ev.preventDefault();const fd=new FormData(F);const x=new XMLHttpRequest();x.open('POST','/upload',true);P(0);x.upload.onprogress=function(e){if(e&&e.lengthComputable){let p=Math.floor((e.loaded*100)/e.total);if(p<0)p=0;if(p>100)p=100;P(p);}};x.onload=function(){P(100);if(x.responseText&&x.responseText.length>0){document.open();document.write(x.responseText);document.close();}};x.onerror=function(){const t=document.getElementById('up_prog_txt');if(t)t.textContent='Upload failed';};x.send(fd);});}";
+        html += "document.getElementById('up_drive').addEventListener('change',U);document.getElementById('up_path').addEventListener('input',U);B(document);U();";
+        html += "</script></section></body></html>";
         return html;
     }
 
@@ -300,8 +327,7 @@ private:
                     if (!name.length()) continue;
                     String full = joinPath(dir, name);
                     if (is_dir) out += "<li><details class='dir' data-drive='L' data-path='" + htmlEscape(full) + "'><summary>" + htmlEscape(name) + "</summary><ul class='children'></ul></details></li>";
-                    else if (isAllowedTextFile(name)) out += "<li><a href='/download?drive=L&path=" + urlEncodeUtf8(full) + "'>" + htmlEscape(name) + "</a></li>";
-                    else out += "<li class='dim'>" + htmlEscape(name) + "</li>";
+                    else out += "<li><a href='/download?drive=L&path=" + urlEncodeUtf8(full) + "'>" + htmlEscape(name) + "</a></li>";
                     if (++count > SHARE_LIST_MAX_ENTRIES) return server->send(200, "text/html; charset=utf-8", "<li class='err'>Directory too large</li>");
                 }
                 root.close();
@@ -314,8 +340,7 @@ private:
                     if (!name.length()) continue;
                     String full = joinPath(dir, name);
                     if (is_dir) out += "<li><details class='dir' data-drive='D' data-path='" + htmlEscape(full) + "'><summary>" + htmlEscape(name) + "</summary><ul class='children'></ul></details></li>";
-                    else if (isAllowedTextFile(name)) out += "<li><a href='/download?drive=D&path=" + urlEncodeUtf8(full) + "'>" + htmlEscape(name) + "</a></li>";
-                    else out += "<li class='dim'>" + htmlEscape(name) + "</li>";
+                    else out += "<li><a href='/download?drive=D&path=" + urlEncodeUtf8(full) + "'>" + htmlEscape(name) + "</a></li>";
                     if (++count > SHARE_LIST_MAX_ENTRIES) return server->send(200, "text/html; charset=utf-8", "<li class='err'>Directory too large</li>");
                 }
                 root.close();
@@ -334,46 +359,107 @@ private:
             if (d == 'L') {
                 if (!LittleFS.exists(p.c_str())) return server->send(404, "text/plain", "file not found");
                 File f = LittleFS.open(p.c_str(), "r"); if (!f) return server->send(500, "text/plain", "open failed");
-                server->streamFile(f, "text/plain; charset=utf-8"); f.close(); return;
+                server->streamFile(f, "application/octet-stream"); f.close(); return;
             }
             if (d == 'D' && sd_helper && sd_helper->isInitialized()) {
                 FsFile f = sd_helper->getFs().open(p.c_str(), O_RDONLY); if (!f.isOpen()) return server->send(404, "text/plain", "file not found");
-                server->setContentLength((size_t)f.fileSize()); server->send(200, "text/plain; charset=utf-8", " ");
+                server->setContentLength((size_t)f.fileSize()); server->send(200, "application/octet-stream", "");
                 char chunk[1024]; while (true) { int n = f.read(chunk, sizeof(chunk)); if (n <= 0) break; server->sendContent(chunk, (size_t)n); } f.close(); return;
             }
             server->send(500, "text/plain", "drive unavailable");
         });
 
         server->on("/upload", HTTP_POST, [this]() {
-            String msg = upload_ok ? "OK: upload completed" : ("ERR: " + (upload_error.length() ? upload_error : String("upload failed")));
-            server->send(upload_ok ? 200 : 400, "text/html; charset=utf-8", buildPage(msg));
+            String msg;
+            if (!upload_batch_active || upload_batch_total == 0) {
+                msg = "ERR: no file received";
+                server->send(400, "text/html; charset=utf-8", buildPage(msg));
+            } else if (upload_batch_fail == 0) {
+                msg = "OK: uploaded " + String((unsigned long)upload_batch_ok) + " file(s)";
+                server->send(200, "text/html; charset=utf-8", buildPage(msg));
+            } else {
+                msg = "ERR: success " + String((unsigned long)upload_batch_ok) + ", failed " + String((unsigned long)upload_batch_fail);
+                if (upload_batch_error.length()) msg += " (" + upload_batch_error + ")";
+                server->send(400, "text/html; charset=utf-8", buildPage(msg));
+            }
+            upload_batch_active = false;
+            upload_batch_total = 0;
+            upload_batch_ok = 0;
+            upload_batch_fail = 0;
+            upload_batch_error = "";
         }, [this]() {
             HTTPUpload& up = server->upload();
             if (up.status == UPLOAD_FILE_START) {
+                if (!upload_batch_active) {
+                    upload_batch_active = true;
+                    upload_batch_total = 0;
+                    upload_batch_ok = 0;
+                    upload_batch_fail = 0;
+                    upload_batch_error = "";
+                }
+                upload_batch_total++;
+
                 closeUploadHandles(); upload_ok = false; upload_failed = false; upload_bytes = 0; upload_vpath = ""; upload_error = "";
-                String req = server->hasArg("path") ? server->arg("path") : "";
+                String req = server->hasArg("path") ? server->arg("path") : "/";
                 String drv = server->hasArg("drive") ? server->arg("drive") : "";
-                String vpath, err;
-                if (!parsePathArg(req.length() ? req : String(up.filename), drv, false, vpath, err) || !isAllowedTextFile(innerFromVPath(vpath))) { upload_failed = true; upload_error = "invalid path"; return; }
+                if (req.length() == 0) req = "/";
+                String base_name = basenameOf(String(up.filename));
+                base_name.replace("\\", "/");
+                base_name = basenameOf(base_name);
+                if (base_name.length() == 0) {
+                    upload_failed = true;
+                    upload_error = "invalid file";
+                    upload_batch_fail++;
+                    if (!upload_batch_error.length()) upload_batch_error = upload_error;
+                    return;
+                }
+
+                String dir_vpath, err;
+                if (!parsePathArg(req, drv, true, dir_vpath, err)) {
+                    upload_failed = true;
+                    upload_error = err.length() ? err : "invalid path";
+                    upload_batch_fail++;
+                    if (!upload_batch_error.length()) upload_batch_error = upload_error;
+                    return;
+                }
+
+                String dir_inner = innerFromVPath(dir_vpath);
+                String final_inner = joinPath(dir_inner, base_name);
+                String vpath = buildVPath(driveFromVPath(dir_vpath), final_inner);
                 upload_vpath = vpath; upload_drive = driveFromVPath(vpath);
                 String p = innerFromVPath(vpath);
                 if (upload_drive == 'L') { ensureLittleFsParent(p); upload_lfs = LittleFS.open(p.c_str(), "w"); upload_ok = (bool)upload_lfs; }
                 else if (upload_drive == 'D' && sd_helper && sd_helper->isInitialized()) { ensureSdParent(p); upload_sd = sd_helper->getFs().open(p.c_str(), O_WRONLY | O_CREAT | O_TRUNC); upload_ok = upload_sd.isOpen(); }
+                if (!upload_ok) {
+                    upload_failed = true;
+                    upload_error = "open failed";
+                    upload_batch_fail++;
+                    if (!upload_batch_error.length()) upload_batch_error = upload_error;
+                }
             } else if (up.status == UPLOAD_FILE_WRITE) {
                 if (!upload_ok || upload_failed) return;
                 upload_bytes += up.currentSize;
-                if (upload_bytes > UPLOAD_MAX_BYTES) { upload_ok = false; upload_failed = true; upload_error = "file too large"; closeUploadHandles(); if (upload_vpath.length()) removeVPath(upload_vpath); return; }
                 size_t w = 0;
                 if (upload_drive == 'L' && upload_lfs) w = upload_lfs.write(up.buf, up.currentSize);
                 else if (upload_drive == 'D' && upload_sd.isOpen()) w = upload_sd.write(up.buf, up.currentSize);
-                if (w != up.currentSize) { upload_ok = false; upload_failed = true; upload_error = "write failed"; closeUploadHandles(); if (upload_vpath.length()) removeVPath(upload_vpath); }
+                if (w != up.currentSize) {
+                    upload_ok = false; upload_failed = true; upload_error = "write failed";
+                    closeUploadHandles(); if (upload_vpath.length()) removeVPath(upload_vpath);
+                    upload_batch_fail++;
+                    if (!upload_batch_error.length()) upload_batch_error = upload_error;
+                }
             } else if (up.status == UPLOAD_FILE_END) {
                 closeUploadHandles();
-                if (!upload_failed) upload_ok = true;
+                if (!upload_failed) {
+                    upload_ok = true;
+                    upload_batch_ok++;
+                }
             } else if (up.status == UPLOAD_FILE_ABORTED) {
                 closeUploadHandles();
                 if (upload_vpath.length()) removeVPath(upload_vpath);
                 upload_ok = false; upload_failed = true; upload_error = "upload aborted";
+                upload_batch_fail++;
+                if (!upload_batch_error.length()) upload_batch_error = upload_error;
             }
         });
 

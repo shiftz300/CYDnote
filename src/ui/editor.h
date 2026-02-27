@@ -19,6 +19,7 @@ private:
     static constexpr uint8_t IME_PROXY_CAND_MAX = 20;
     static constexpr uint8_t IME_CAND_PER_PAGE = 8;
     static constexpr uint16_t IME_CAND_MAX = 160;
+    static constexpr size_t LARGE_DOC_PERF_THRESHOLD = 48 * 1024;
     lv_obj_t* screen;
     lv_obj_t* textarea;
     lv_obj_t* ime;
@@ -42,6 +43,7 @@ private:
     uint16_t ime_cand_page;
     char ime_cands[IME_CAND_MAX][8];
     bool ime_visible;
+    bool large_doc_mode;
     bool ime_font_acquired;
     uint32_t ime_cursor_anchor_pos;
     bool ime_cursor_anchor_valid;
@@ -54,7 +56,7 @@ public:
                keyboard(nullptr), ime_container(nullptr), ime_cand_proxy(nullptr), ime_cand_src(nullptr), ime_btn(nullptr), title_wrap(nullptr), title_label(nullptr), top_btn(nullptr),
                save_popup(nullptr), save_popup_timer(nullptr),
                ime_cand_syncing(false), ime_is_k9_mode(false), ime_cand_count(0), ime_cand_page(0),
-               ime_visible(false), ime_font_acquired(false), ime_cursor_anchor_pos(0), ime_cursor_anchor_valid(false),
+               ime_visible(false), large_doc_mode(false), ime_font_acquired(false), ime_cursor_anchor_pos(0), ime_cursor_anchor_valid(false),
                current_file(""), on_exit_cb(nullptr), on_save_cb(nullptr) {
         memset(ime_compose, 0, sizeof(ime_compose));
         memset(ime_cands, 0, sizeof(ime_cands));
@@ -184,6 +186,9 @@ public:
         lv_obj_set_style_bg_color(textarea, lv_color_hex(0xFFFFFF), LV_PART_CURSOR);
         lv_obj_set_style_bg_opa(textarea, LV_OPA_70, LV_PART_CURSOR);
         lv_obj_set_style_width(textarea, 1, LV_PART_CURSOR);
+        lv_obj_add_flag(textarea, LV_OBJ_FLAG_SCROLL_ELASTIC);
+        lv_obj_add_flag(textarea, LV_OBJ_FLAG_SCROLL_MOMENTUM);
+        lv_obj_set_style_anim_duration(textarea, 260, 0);
         int32_t editor_cursor_h = EDITOR_TEXT_SIZE_PX;
         if (editor_cursor_h < 4) editor_cursor_h = 4;
         lv_obj_set_style_height(textarea, editor_cursor_h, LV_PART_CURSOR);
@@ -314,6 +319,7 @@ public:
 
     void setText(const String& content) {
         if (!textarea) return;
+        applyLargeDocPerfMode(content.length());
         lv_textarea_set_text(textarea, content.c_str());
         moveCursorAndViewToStart();
     }
@@ -379,6 +385,17 @@ public:
     }
 
 private:
+    void applyLargeDocPerfMode(size_t content_len) {
+        if (!textarea) return;
+        bool want_large_mode = content_len >= LARGE_DOC_PERF_THRESHOLD;
+        if (want_large_mode == large_doc_mode) return;
+        large_doc_mode = want_large_mode;
+
+        // Large doc: reduce expensive cursor hit-test/update path during scroll.
+        lv_textarea_set_cursor_click_pos(textarea, !large_doc_mode);
+        lv_textarea_set_text_selection(textarea, !large_doc_mode);
+    }
+
     void closeSavePopup() {
         if (save_popup_timer) {
             lv_timer_del(save_popup_timer);
