@@ -35,11 +35,14 @@ If you want Netlify to deploy directly from this repository, a root-level `netli
 - Netlify can publish the `webflash/` directory directly
 - The page loads firmware binaries from the repository's `latest` release assets
 - No firmware build step is required inside Netlify
+- The page also offers an optional `ghproxy` mirror toggle for faster firmware downloads in mainland China
 
 Notes:
 
 - Use Chrome or Edge because the site depends on Web Serial
 - The preserve-data mode is only safe when the partition layout has not changed
+- If GitHub's direct downloads are slow in your region, enable the `ghproxy` mirror toggle in the page
+- `ghproxy` only proxies the firmware download URLs; release metadata checks still use the GitHub API
 - The page checks the `latest` release assets on load; if `littlefs.bin` is missing it automatically disables the full-restore option
 - If the base firmware assets (`bootloader.bin`, `partitions.bin`, `firmware.bin`) are missing, the page blocks flashing entirely
 - If the browser cannot reach the GitHub API metadata endpoint, the page falls back to preserve-data mode only

@@ -112,6 +112,32 @@
       color: var(--cyd-primary-soft);
       font-size: 0.95rem;
     }
+    .mirror-panel {
+      margin: 16px 0 0;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--cyd-border);
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .mirror-panel label {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      cursor: pointer;
+      color: #fff;
+      font-weight: 600;
+    }
+    .mirror-panel input {
+      margin-top: 3px;
+      accent-color: var(--cyd-primary);
+    }
+    .mirror-panel small {
+      display: block;
+      margin-top: 4px;
+      color: var(--cyd-text-soft);
+      font-weight: 400;
+      line-height: 1.5;
+    }
     .release-note.error {
       color: #ff9ea2;
     }
@@ -153,6 +179,15 @@
       <div class="summary" id="mode-summary">
         当前模式：保留数据更新（不会覆盖 <code>0x310000</code> 的 LittleFS 分区）。
       </div>
+      <div class="mirror-panel">
+        <label>
+          <input type="checkbox" id="ghproxy-toggle">
+          <span>
+            使用国内镜像 <code>ghproxy</code> 加速固件下载
+            <small>仅代理固件 bin 下载地址；Release 元数据仍从 GitHub API 读取。</small>
+          </span>
+        </label>
+      </div>
       <p class="release-note" id="release-note">正在读取 GitHub Release 构建文件…</p>
 
       <esp-web-install-button id="installer" manifest="./manifest-preserve.json">
@@ -163,6 +198,7 @@
         <li>若自动进入下载模式失败，请按住 <code>BOOT</code>，再点一次 <code>RESET</code> 后重试。</li>
         <li>“保留数据更新”仅在分区表未变化时才能可靠保留既有数据。</li>
         <li>本页会直接读取 GitHub Releases 中 <code>latest</code> 标签下的构建产物，无需再把 bin 文件放到网页目录。</li>
+        <li>如果在国内访问 GitHub 下载较慢，可勾选上方的 <code>ghproxy</code> 镜像加速。</li>
       </ul>
       <p class="hint">本页使用 ESP Web Tools；manifest 已按本仓库分区表配置，并直接指向 GitHub Release 产物。</p>
     </div>
@@ -174,6 +210,7 @@
       erase: "./manifest-full.json",
     };
     const releaseApi = "https://api.github.com/repos/shiftz300/CYDnote/releases/tags/latest";
+    const ghproxyPrefix = "https://ghproxy.com/";
     const requiredByMode = {
       preserve: ["bootloader.bin", "partitions.bin", "firmware.bin"],
       erase: ["bootloader.bin", "partitions.bin", "firmware.bin", "littlefs.bin"],
@@ -191,6 +228,17 @@
     const radios = document.querySelectorAll("input[name='flash-mode']");
     const eraseRadio = document.querySelector("input[value='erase']");
     const eraseOption = eraseRadio.closest(".option");
+    const ghproxyToggle = document.getElementById("ghproxy-toggle");
+    let currentManifestUrl = null;
+    let releaseNoteBase = "正在读取 GitHub Release 构建文件…";
+
+    function updateReleaseNote(text, isError = false) {
+      releaseNoteBase = text;
+      releaseNote.textContent = ghproxyToggle.checked
+        ? `${releaseNoteBase} 当前固件下载将通过 ghproxy 镜像。`
+        : releaseNoteBase;
+      releaseNote.classList.toggle("error", isError);
+    }
 
     function setButtonEnabled(enabled) {
       activateButton.disabled = !enabled;
@@ -198,8 +246,28 @@
       installer.style.opacity = enabled ? "1" : "0.75";
     }
 
-    function updateMode(mode) {
-      installer.setAttribute("manifest", manifests[mode]);
+    function releaseManifestUrl() {
+      if (!currentManifestUrl) return;
+      URL.revokeObjectURL(currentManifestUrl);
+      currentManifestUrl = null;
+    }
+
+    async function updateMode(mode) {
+      const response = await fetch(manifests[mode]);
+      if (!response.ok) throw new Error(`Manifest ${response.status}`);
+      const manifest = await response.json();
+      if (ghproxyToggle.checked) {
+        manifest.builds = (manifest.builds || []).map((build) => ({
+          ...build,
+          parts: (build.parts || []).map((part) => ({
+            ...part,
+            path: part.path.startsWith("https://github.com/") ? `${ghproxyPrefix}${part.path}` : part.path,
+          })),
+        }));
+      }
+      releaseManifestUrl();
+      currentManifestUrl = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: "application/json" }));
+      installer.setAttribute("manifest", currentManifestUrl);
       summary.textContent = summaryText[mode];
     }
 
@@ -225,8 +293,7 @@
         const eraseReady = requiredByMode.erase.every((name) => assetNames.has(name));
 
         if (!preserveReady) {
-          releaseNote.textContent = "当前 latest release 缺少基础固件文件，暂时无法在线刷机。";
-          releaseNote.classList.add("error");
+          updateReleaseNote("当前 latest release 缺少基础固件文件，暂时无法在线刷机。", true);
           setButtonEnabled(false);
           markEraseUnavailable();
           return;
@@ -236,29 +303,52 @@
           ? new Date(release.published_at).toLocaleString("zh-CN", { hour12: false })
           : "未知时间";
         if (eraseReady) {
-          releaseNote.textContent = `已读取 latest release：${release.name || "Latest Build"}（${published}），可使用保留数据或全量覆盖两种模式。`;
+          updateReleaseNote(`已读取 latest release：${release.name || "Latest Build"}（${published}），可使用保留数据或全量覆盖两种模式。`);
         } else {
-          releaseNote.textContent = `已读取 latest release：${release.name || "Latest Build"}（${published}）。当前缺少 littlefs.bin，已自动禁用“全量覆盖恢复”。`;
+          updateReleaseNote(`已读取 latest release：${release.name || "Latest Build"}（${published}）。当前缺少 littlefs.bin，已自动禁用“全量覆盖恢复”。`);
           markEraseUnavailable();
         }
         setButtonEnabled(true);
       } catch (error) {
-        releaseNote.textContent = `读取 GitHub Release 元数据失败：${error.message}。已回退为仅保留“保留数据更新”模式；若 latest 资产可访问，仍可继续刷机。`;
-        releaseNote.classList.add("error");
+        updateReleaseNote(`读取 GitHub Release 元数据失败：${error.message}。已回退为仅保留“保留数据更新”模式；若 latest 资产可访问，仍可继续刷机。`, true);
         setButtonEnabled(true);
         markEraseUnavailable();
       }
     }
 
     radios.forEach((radio) => {
-      radio.addEventListener("change", () => {
-        if (radio.checked) updateMode(radio.value);
+      radio.addEventListener("change", async () => {
+        if (!radio.checked) return;
+        try {
+          setButtonEnabled(false);
+          await updateMode(radio.value);
+          setButtonEnabled(true);
+        } catch (error) {
+          updateReleaseNote(`切换刷机模式失败：${error.message}`, true);
+          setButtonEnabled(false);
+        }
       });
     });
 
+    ghproxyToggle.addEventListener("change", async () => {
+      const activeMode = document.querySelector("input[name='flash-mode']:checked").value;
+      try {
+        setButtonEnabled(false);
+        await updateMode(activeMode);
+        setButtonEnabled(true);
+        updateReleaseNote(releaseNoteBase, releaseNote.classList.contains("error"));
+      } catch (error) {
+        updateReleaseNote(`切换 ghproxy 镜像失败：${error.message}`, true);
+        setButtonEnabled(false);
+      }
+    });
+
     setButtonEnabled(false);
-    updateMode("preserve");
-    loadReleaseInfo();
+    updateReleaseNote(releaseNoteBase);
+    Promise.all([updateMode("preserve"), loadReleaseInfo()]).catch((error) => {
+      updateReleaseNote(`初始化刷机页面失败：${error.message}`, true);
+      setButtonEnabled(false);
+    });
   </script>
 </body>
 </html>
