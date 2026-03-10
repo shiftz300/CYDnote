@@ -47,6 +47,7 @@
 - 页面加载时会先检查 `latest` release 资产；若缺少 `littlefs.bin`，会自动禁用“全量覆盖恢复”
 - 若 `latest` release 中缺少基础固件文件（`bootloader.bin`、`partitions.bin`、`firmware.bin`），网页会阻止开始刷机
 - 若浏览器环境暂时无法访问 GitHub API，页面会回退为只保留“保留数据更新”模式
+- 页面显示的构建日期来自固件资产的上传/更新时间，因为复用的 `latest` release 记录时间可能早于当前 bin 文件
 - 本仓库当前板型配置为经典 `ESP32`，并非启用 OPI PSRAM 的 `ESP32-S3`
 
 ## 警示

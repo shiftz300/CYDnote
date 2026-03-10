@@ -712,7 +712,7 @@
         .filter((date) => !Number.isNaN(date.getTime()));
 
       const newestAssetDate = assetTimes.length > 0
-        ? new Date(Math.max(...assetTimes.map((date) => date.getTime())))
+        ? new Date(Math.max(...assetTimes))
         : null;
 
       buildDate.textContent = newestAssetDate ? formatTimestamp(newestAssetDate.toISOString()) : "Unknown";
@@ -742,7 +742,7 @@
 
         const newestAsset = (release.assets || [])
           .filter((asset) => requiredByMode.preserve.includes(asset.name))
-          .sort((left, right) => new Date(right.updated_at || 0) - new Date(left.updated_at || 0))[0];
+          .sort((left, right) => new Date(right.updated_at || right.created_at || 0) - new Date(left.updated_at || left.created_at || 0))[0];
         const buildStamp = newestAsset ? formatTimestamp(newestAsset.updated_at || newestAsset.created_at) : "Unknown";
         const releaseStamp = formatTimestamp(release.published_at || release.created_at);
 
@@ -777,7 +777,7 @@
     }
 
     function downloadBackup(data) {
-      const filenameDate = new Date().toISOString().replace(/[:.]/g, "-");
+      const filenameDate = new Date().toISOString().replace(/[:.]/g, "-").replace("T", "-").replace("Z", "");
       const fileName = `${backupFilenamePrefix}-${filenameDate}.bin`;
       const blob = new Blob([data], { type: "application/octet-stream" });
       const url = URL.createObjectURL(blob);
