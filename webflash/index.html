@@ -1,210 +1,517 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CYDnote 在线刷机</title>
+  <title>CYDnote Web Flasher</title>
   <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
   <style>
     :root {
       color-scheme: dark;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #111;
-      color: #f9fafb;
-      --cyd-bg: #111111;
-      --cyd-panel: #1e1e1e;
-      --cyd-border: #404040;
-      --cyd-primary: #5cb8ff;
-      --cyd-primary-soft: #8ed1ff;
-      --cyd-text-soft: #d1d5db;
+      background: #101216;
+      color: #f8fafc;
+      --page-bg: #101216;
+      --card-bg: #171a21;
+      --panel-bg: #1d212b;
+      --panel-soft: rgba(255, 255, 255, 0.03);
+      --border: #313745;
+      --accent: #5cb8ff;
+      --accent-soft: #93d5ff;
+      --text-soft: #cbd5e1;
+      --ok: #7dd3a7;
+      --warn: #ffd07d;
+      --error: #ff9e9e;
+      --shadow: 0 20px 40px rgba(0, 0, 0, 0.34);
+    }
+    * {
+      box-sizing: border-box;
     }
     body {
       margin: 0;
-      background: linear-gradient(180deg, #111111 0%, #171717 100%);
+      background:
+        radial-gradient(circle at top, rgba(92, 184, 255, 0.14), transparent 28%),
+        linear-gradient(180deg, #101216 0%, #151922 100%);
+      color: #f8fafc;
     }
     main {
-      max-width: 760px;
+      max-width: 960px;
       margin: 0 auto;
-      padding: 32px 20px 48px;
+      padding: 28px 18px 40px;
+    }
+    .shell {
+      display: grid;
+      gap: 18px;
     }
     .card {
-      background: rgba(30, 30, 30, 0.95);
-      border: 1px solid var(--cyd-border);
-      border-radius: 16px;
-      padding: 24px;
-      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
-      backdrop-filter: blur(10px);
+      background: rgba(23, 26, 33, 0.96);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 22px;
+      backdrop-filter: blur(12px);
     }
-    h1 {
-      margin: 0 0 12px;
-      font-size: 2rem;
+    .hero {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.9fr);
+      align-items: start;
     }
-    p, li {
-      line-height: 1.65;
-      color: var(--cyd-text-soft);
-    }
-    .mode {
+    .hero-copy {
       display: grid;
       gap: 12px;
-      margin: 24px 0;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: fit-content;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(147, 213, 255, 0.32);
+      background: rgba(92, 184, 255, 0.12);
+      color: var(--accent-soft);
+      font-size: 0.92rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(1.9rem, 4vw, 2.8rem);
+      line-height: 1.1;
+    }
+    p,
+    li,
+    label,
+    small {
+      color: var(--text-soft);
+      line-height: 1.6;
+    }
+    p {
+      margin: 0;
+    }
+    code {
+      color: var(--accent-soft);
+    }
+    .hero-stats,
+    .meta-grid,
+    .action-grid {
+      display: grid;
+      gap: 12px;
+    }
+    .hero-stats {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .stat {
+      background: var(--panel-soft);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      min-height: 92px;
+    }
+    .stat span {
+      display: block;
+      font-size: 0.85rem;
+      color: #97a4b8;
+      margin-bottom: 6px;
+    }
+    .stat strong {
+      display: block;
+      font-size: 1rem;
+      color: #fff;
+      word-break: break-word;
+    }
+    .stack {
+      display: grid;
+      gap: 18px;
+    }
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 14px;
+      font-size: 1.05rem;
+    }
+    .section-title .icon,
+    .icon-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 12px;
+      background: rgba(92, 184, 255, 0.14);
+      border: 1px solid rgba(147, 213, 255, 0.3);
+      font-size: 1.05rem;
+    }
+    .mode-grid,
+    .meta-grid,
+    .tips,
+    .action-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .mode-grid,
+    .meta-grid,
+    .action-grid {
+      display: grid;
+      gap: 12px;
     }
     .option {
       display: flex;
       gap: 12px;
       align-items: flex-start;
-      padding: 14px 16px;
-      border-radius: 12px;
-      border: 1px solid var(--cyd-border);
-      background: rgba(255, 255, 255, 0.02);
+      padding: 16px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: var(--panel-soft);
+      cursor: pointer;
+      transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+    }
+    .option:hover {
+      border-color: rgba(147, 213, 255, 0.45);
+      transform: translateY(-1px);
     }
     .option input {
-      margin-top: 4px;
-      accent-color: var(--cyd-primary);
+      margin-top: 3px;
+      accent-color: var(--accent);
     }
     .option strong {
       display: block;
       margin-bottom: 4px;
       color: #fff;
+      font-size: 1rem;
+    }
+    .option .icon-badge {
+      flex: none;
     }
     .option:has(input:checked) {
-      border-color: var(--cyd-primary-soft);
+      border-color: var(--accent-soft);
       background: rgba(92, 184, 255, 0.1);
-      box-shadow: inset 0 0 0 1px rgba(142, 209, 255, 0.24);
-    }
-    .summary {
-      margin: 18px 0;
-      padding: 14px 16px;
-      border-radius: 12px;
-      background: rgba(92, 184, 255, 0.12);
-      border: 1px solid rgba(142, 209, 255, 0.35);
-      color: #dbeafe;
-    }
-    button {
-      appearance: none;
-      border: 1px solid var(--cyd-primary-soft);
-      border-radius: 10px;
-      padding: 14px 22px;
-      font-size: 1rem;
-      font-weight: 700;
-      color: #fff;
-      background: var(--cyd-panel);
-      cursor: pointer;
-      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
-      transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
-    }
-    button:hover {
-      background: rgba(92, 184, 255, 0.14);
-      border-color: var(--cyd-primary);
-    }
-    button:active {
-      background: var(--cyd-primary);
-      border-color: var(--cyd-primary-soft);
-    }
-    code {
-      color: var(--cyd-primary-soft);
-    }
-    .hint {
-      font-size: 0.95rem;
-      color: #9ca3af;
-    }
-    .release-note {
-      margin: 12px 0 0;
-      color: var(--cyd-primary-soft);
-      font-size: 0.95rem;
-    }
-    .mirror-panel {
-      margin: 16px 0 0;
-      padding: 12px 14px;
-      border-radius: 12px;
-      border: 1px solid var(--cyd-border);
-      background: rgba(255, 255, 255, 0.02);
-    }
-    .mirror-panel label {
-      display: flex;
-      gap: 10px;
-      align-items: flex-start;
-      cursor: pointer;
-      color: #fff;
-      font-weight: 600;
-    }
-    .mirror-panel input {
-      margin-top: 3px;
-      accent-color: var(--cyd-primary);
-    }
-    .mirror-panel small {
-      display: block;
-      margin-top: 4px;
-      color: var(--cyd-text-soft);
-      font-weight: 400;
-      line-height: 1.5;
-    }
-    .release-note.error {
-      color: #ff9ea2;
+      box-shadow: inset 0 0 0 1px rgba(147, 213, 255, 0.24);
     }
     .option.disabled {
       opacity: 0.58;
+      cursor: not-allowed;
+    }
+    .summary,
+    .toggle-panel,
+    .release-panel,
+    .backup-panel,
+    .log-panel,
+    .tip-card {
+      padding: 16px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: var(--panel-soft);
+    }
+    .summary {
+      background: rgba(92, 184, 255, 0.12);
+      border-color: rgba(147, 213, 255, 0.3);
+      color: #e4f4ff;
+    }
+    .summary strong {
+      color: #fff;
+    }
+    .toggle-panel label {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      cursor: pointer;
+    }
+    .toggle-panel input {
+      margin-top: 4px;
+      accent-color: var(--accent);
+    }
+    .release-panel.error,
+    .backup-status.error {
+      color: var(--error);
+      border-color: rgba(255, 158, 158, 0.35);
+      background: rgba(255, 96, 96, 0.08);
+    }
+    .release-panel {
+      display: grid;
+      gap: 8px;
+      color: var(--accent-soft);
+    }
+    .release-panel strong {
+      color: #fff;
+    }
+    .action-grid {
+      align-items: start;
+    }
+    button,
+    .button-link {
+      appearance: none;
+      border: 1px solid rgba(147, 213, 255, 0.42);
+      border-radius: 12px;
+      padding: 13px 18px;
+      font-size: 0.98rem;
+      font-weight: 700;
+      color: #fff;
+      background: linear-gradient(180deg, #202734 0%, #1a202a 100%);
+      cursor: pointer;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+      transition: border-color 0.18s ease, transform 0.18s ease, background-color 0.18s ease;
+      text-align: center;
+      text-decoration: none;
+      width: 100%;
+    }
+    button:hover,
+    .button-link:hover {
+      border-color: var(--accent);
+      transform: translateY(-1px);
+      background: rgba(92, 184, 255, 0.14);
     }
     button:disabled {
       cursor: not-allowed;
-      color: #c7c7c7;
-      background: #1a1a1a;
-      border-color: #555;
-      box-shadow: none;
+      opacity: 0.62;
+      transform: none;
+      background: #1a1d24;
+      border-color: #4b5563;
+    }
+    esp-web-install-button {
+      display: block;
+      width: 100%;
+    }
+    esp-web-install-button::part(unsupported) {
+      width: 100%;
+    }
+    .button-row {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: stretch;
+    }
+    .button-group {
+      display: grid;
+      gap: 12px;
+    }
+    .backup-panel {
+      display: grid;
+      gap: 12px;
+    }
+    .backup-status {
+      color: var(--text-soft);
+      min-height: 1.4rem;
+    }
+    .progress {
+      width: 100%;
+      height: 11px;
+      accent-color: var(--accent);
+    }
+    .meta-grid .stat {
+      min-height: 108px;
+    }
+    .tips {
+      display: grid;
+      gap: 12px;
+    }
+    ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+    .log-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .toolbar-actions {
+      display: flex;
+      gap: 10px;
+    }
+    .toolbar-actions button {
+      width: auto;
+      min-width: 110px;
+      padding: 10px 14px;
+      font-size: 0.92rem;
+    }
+    #log-window {
+      margin: 0;
+      min-height: 240px;
+      max-height: 340px;
+      overflow: auto;
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid #252b37;
+      background: #0d1117;
+      color: #d8e6f7;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.84rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .hint {
+      font-size: 0.92rem;
+      color: #97a4b8;
+    }
+    @media (max-width: 860px) {
+      .hero,
+      .hero-stats,
+      .mode-grid,
+      .meta-grid,
+      .action-grid,
+      .button-row,
+      .tips {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
 <body>
   <main>
-    <div class="card">
-      <h1>CYDnote 在线刷机</h1>
-      <p>适用于 <code>ESP32-2432S028/ESP32-2432S028R (CYD)</code>。请使用支持 Web Serial 的 Chrome/Edge，并通过 USB 连接设备。</p>
+    <div class="shell">
+      <section class="card hero">
+        <div class="hero-copy">
+          <span class="eyebrow">⚡ CYDnote Web Flasher</span>
+          <h1>Flash or back up your CYD in one page.</h1>
+          <p>
+            Built for <code>ESP32-2432S028 / ESP32-2432S028R (CYD)</code>. Use Chrome or Edge with Web Serial,
+            then connect the board over USB.
+          </p>
+        </div>
+        <div class="hero-stats">
+          <div class="stat">
+            <span>Board</span>
+            <strong>ESP32 CYD 2.8&quot;</strong>
+          </div>
+          <div class="stat">
+            <span>Data partition</span>
+            <strong id="partition-size">0x0E0000 bytes</strong>
+          </div>
+          <div class="stat">
+            <span>Current mode</span>
+            <strong id="current-mode-stat">Safe update</strong>
+          </div>
+        </div>
+      </section>
 
-      <div class="mode">
-        <label class="option">
-          <input type="radio" name="flash-mode" value="preserve" checked>
-          <span>
-            <strong>保留数据更新</strong>
-            仅更新引导、分区表和应用固件，<b>不覆盖</b> LittleFS 数据分区，适合日常升级。
-          </span>
-        </label>
-        <label class="option">
-          <input type="radio" name="flash-mode" value="erase">
-          <span>
-            <strong>全量覆盖恢复</strong>
-            同时写入 LittleFS 镜像，会覆盖设备上的本地数据，适合首次初始化或恢复出厂状态。
-          </span>
-        </label>
-      </div>
+      <section class="card stack">
+        <div>
+          <h2 class="section-title"><span class="icon">🧭</span><span>Choose a flash mode</span></h2>
+          <div class="mode-grid">
+            <label class="option">
+              <input type="radio" name="flash-mode" value="preserve" checked>
+              <span class="icon-badge">🛡️</span>
+              <span>
+                <strong>Safe update</strong>
+                Update the bootloader, partitions and application only. The LittleFS data partition is kept.
+              </span>
+            </label>
+            <label class="option">
+              <input type="radio" name="flash-mode" value="erase">
+              <span class="icon-badge">🧹</span>
+              <span>
+                <strong>Factory restore</strong>
+                Flash the LittleFS image as well. This overwrites the local data stored on the device.
+              </span>
+            </label>
+          </div>
+        </div>
 
-      <div class="summary" id="mode-summary">
-        当前模式：保留数据更新（不会覆盖 <code>0x310000</code> 的 LittleFS 分区）。
-      </div>
-      <div class="mirror-panel">
-        <label>
-          <input type="checkbox" id="ghproxy-toggle">
-          <span>
-            使用国内镜像 <code>ghproxy</code> 加速固件下载
-            <small>仅代理固件 bin 下载地址；Release 元数据仍从 GitHub API 读取。</small>
-          </span>
-        </label>
-      </div>
-      <p class="release-note" id="release-note">正在读取 GitHub Release 构建文件…</p>
+        <div class="summary" id="mode-summary">
+          <strong>Safe update selected.</strong> The LittleFS partition at <code>0x310000</code> is not overwritten.
+        </div>
 
-      <esp-web-install-button id="installer" manifest="./manifest-preserve.json">
-        <button slot="activate">连接设备并开始刷机</button>
-      </esp-web-install-button>
+        <div class="toggle-panel">
+          <label>
+            <input type="checkbox" id="ghproxy-toggle">
+            <span>
+              <strong>Use ghproxy for firmware downloads</strong><br>
+              <small>Only binary download URLs are proxied. Release metadata is still read from the GitHub API.</small>
+            </span>
+          </label>
+        </div>
 
-      <ul>
-        <li>若自动进入下载模式失败，请按住 <code>BOOT</code>，再点一次 <code>RESET</code> 后重试。</li>
-        <li>“保留数据更新”仅在分区表未变化时才能可靠保留既有数据。</li>
-        <li>本页会直接读取 GitHub Releases 中 <code>latest</code> 标签下的构建产物，无需再把 bin 文件放到网页目录。</li>
-        <li>如果在国内访问 GitHub 下载较慢，可勾选上方的 <code>ghproxy</code> 镜像加速。</li>
-      </ul>
-      <p class="hint">本页使用 ESP Web Tools；manifest 已按本仓库分区表配置，并直接指向 GitHub Release 产物。</p>
+        <div class="release-panel" id="release-note">
+          Loading GitHub release metadata…
+        </div>
+
+        <div class="meta-grid">
+          <div class="stat">
+            <span>Firmware build date</span>
+            <strong id="build-date">Checking firmware assets…</strong>
+          </div>
+          <div class="stat">
+            <span>Release record date</span>
+            <strong id="release-date">Checking release tag…</strong>
+          </div>
+          <div class="stat">
+            <span>Release tag</span>
+            <strong id="release-tag">latest</strong>
+          </div>
+          <div class="stat">
+            <span>Backup output</span>
+            <strong id="backup-size">LittleFS raw image</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="card stack">
+        <h2 class="section-title"><span class="icon">🚀</span><span>Actions</span></h2>
+        <div class="action-grid">
+          <div class="button-group">
+            <div class="button-row">
+              <esp-web-install-button id="installer" manifest="./manifest-preserve.json">
+                <button slot="activate" id="flash-button">⚡ Connect and flash</button>
+              </esp-web-install-button>
+              <button id="backup-button" type="button">💾 Back up LittleFS</button>
+            </div>
+            <p class="hint">If auto-download mode fails, hold <code>BOOT</code>, tap <code>RESET</code>, and try again.</p>
+          </div>
+
+          <div class="backup-panel">
+            <strong>Backup connected device data</strong>
+            <p>
+              The backup button reads the LittleFS partition directly from the connected board and downloads it as a raw
+              <code>.bin</code> image that can be restored later.
+            </p>
+            <progress class="progress" id="backup-progress" value="0" max="100" hidden></progress>
+            <div class="backup-status" id="backup-status">Ready to create a LittleFS backup from the connected device.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card stack">
+        <h2 class="section-title"><span class="icon">📌</span><span>Quick notes</span></h2>
+        <div class="tips">
+          <div class="tip-card">
+            <ul>
+              <li>Safe update is the recommended option for normal upgrades.</li>
+              <li>Factory restore is only for first-time setup or full recovery.</li>
+              <li>The page reads firmware from the repository release tag <code>latest</code>.</li>
+            </ul>
+          </div>
+          <div class="tip-card">
+            <ul>
+              <li>The build date shown below comes from the firmware asset upload time, not only the release publish time.</li>
+              <li>If the GitHub API cannot be reached, the page falls back to safe update mode.</li>
+              <li>Backups are saved locally in your browser as a downloadable file.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="card log-panel">
+        <div class="log-toolbar">
+          <div>
+            <h2 class="section-title" style="margin:0;"><span class="icon">📝</span><span>Log window</span></h2>
+            <p class="hint">Release checks, mode changes, and backup progress are printed here.</p>
+          </div>
+          <div class="toolbar-actions">
+            <button id="copy-log-button" type="button">Copy log</button>
+            <button id="clear-log-button" type="button">Clear log</button>
+          </div>
+        </div>
+        <pre id="log-window" aria-live="polite">[waiting] CYDnote web flasher is starting…</pre>
+      </section>
     </div>
   </main>
 
-  <script>
+  <script type="module">
     const manifests = {
       preserve: "./manifest-preserve.json",
       erase: "./manifest-full.json",
@@ -212,48 +519,138 @@
     const releaseApi = "https://api.github.com/repos/shiftz300/CYDnote/releases/tags/latest";
     const githubDownloadPrefix = "https://github.com/";
     const ghproxyPrefix = "https://ghproxy.com/";
+    const littleFs = {
+      offset: 0x310000,
+      size: 0x0E0000,
+    };
     const requiredByMode = {
       preserve: ["bootloader.bin", "partitions.bin", "firmware.bin"],
       erase: ["bootloader.bin", "partitions.bin", "firmware.bin", "littlefs.bin"],
     };
-
     const summaryText = {
-      preserve: "当前模式：保留数据更新（不会覆盖 0x310000 的 LittleFS 分区）。",
-      erase: "当前模式：全量覆盖恢复（会写入 0x310000 的 LittleFS 分区并清空现有数据）。",
+      preserve: "<strong>Safe update selected.</strong> The LittleFS partition at <code>0x310000</code> is not overwritten.",
+      erase: "<strong>Factory restore selected.</strong> The LittleFS partition at <code>0x310000</code> will be rewritten and local data will be erased.",
     };
 
     const installer = document.getElementById("installer");
+    const flashButton = document.getElementById("flash-button");
+    const backupButton = document.getElementById("backup-button");
     const summary = document.getElementById("mode-summary");
     const releaseNote = document.getElementById("release-note");
-    const activateButton = installer.querySelector("button");
     const radios = document.querySelectorAll("input[name='flash-mode']");
     const eraseRadio = document.querySelector("input[value='erase']");
     const eraseOption = eraseRadio.closest(".option");
     const ghproxyToggle = document.getElementById("ghproxy-toggle");
+    const buildDate = document.getElementById("build-date");
+    const releaseDate = document.getElementById("release-date");
+    const releaseTag = document.getElementById("release-tag");
+    const currentModeStat = document.getElementById("current-mode-stat");
+    const partitionSize = document.getElementById("partition-size");
+    const backupSize = document.getElementById("backup-size");
+    const backupProgress = document.getElementById("backup-progress");
+    const backupStatus = document.getElementById("backup-status");
+    const clearLogButton = document.getElementById("clear-log-button");
+    const copyLogButton = document.getElementById("copy-log-button");
+    const logWindow = document.getElementById("log-window");
+
+    const serialSupported = typeof navigator !== "undefined" && "serial" in navigator;
+    const backupFilenamePrefix = "cydnote-littlefs-backup";
     let currentManifestUrl = null;
-    let releaseNoteBase = "正在读取 GitHub Release 构建文件…";
+    let releaseNoteBase = "Loading GitHub release metadata…";
+    let isInitializing = true;
+    let backupInProgress = false;
+    let esptoolModulePromise = null;
+
+    partitionSize.textContent = `${toHex(littleFs.size)} bytes`;
+    backupSize.textContent = `${(littleFs.size / (1024 * 1024)).toFixed(2)} MB LittleFS image`;
+    if (!serialSupported) {
+      setBackupStatus("Web Serial is not available in this browser, so device backup is disabled.", true);
+      backupButton.disabled = true;
+    }
+
+    function toHex(value) {
+      return `0x${value.toString(16).toUpperCase().padStart(6, "0")}`;
+    }
+
+    function formatTimestamp(value) {
+      const date = value ? new Date(value) : null;
+      if (!date || Number.isNaN(date.getTime())) {
+        return "Unknown";
+      }
+      return date.toLocaleString("en-GB", {
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+        timeZoneName: "short",
+      });
+    }
 
     function formatErrorMessage(error, fallback) {
       if (error && typeof error.message === "string" && error.message.trim()) {
-        return `${fallback}（${error.message}）`;
+        return `${fallback} (${error.message})`;
       }
       return fallback;
     }
 
-    function updateReleaseNote(text, isError = false) {
-      releaseNoteBase = text;
-      if (!releaseNote) return;
-      const mirrorEnabled = !!(ghproxyToggle && ghproxyToggle.checked);
-      releaseNote.textContent = mirrorEnabled
-        ? `${releaseNoteBase} 当前固件下载将通过 ghproxy 镜像。`
-        : releaseNoteBase;
-      releaseNote.classList.toggle("error", isError);
+    function logLine(message, level = "info") {
+      if (!logWindow) return;
+      const stamp = new Date().toLocaleTimeString("en-GB", { hour12: false });
+      const next = `[${stamp}] [${level}] ${message}`;
+      logWindow.textContent = `${logWindow.textContent.trimEnd()}\n${next}`.trim();
+      logWindow.scrollTop = logWindow.scrollHeight;
     }
 
-    function setButtonEnabled(enabled) {
-      activateButton.disabled = !enabled;
+    function createLoaderTerminal(prefix) {
+      let buffer = "";
+      return {
+        clean() {},
+        write(data) {
+          buffer += String(data).replace(/\r/g, "");
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          lines.filter(Boolean).forEach((line) => logLine(`${prefix}: ${line}`));
+        },
+        writeLine(data) {
+          this.write(`${data}\n`);
+        },
+      };
+    }
+
+    function setBackupStatus(text, isError = false) {
+      backupStatus.textContent = text;
+      backupStatus.classList.toggle("error", isError);
+      logLine(text, isError ? "error" : "info");
+    }
+
+    function updateReleaseNote(text, isError = false) {
+      releaseNoteBase = text;
+      const mirrorEnabled = !!(ghproxyToggle && ghproxyToggle.checked);
+      releaseNote.innerHTML = mirrorEnabled
+        ? `${releaseNoteBase}<br><small>Firmware downloads will currently use ghproxy.</small>`
+        : releaseNoteBase;
+      releaseNote.classList.toggle("error", isError);
+      logLine(text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(), isError ? "error" : "info");
+    }
+
+    function setFlashButtonEnabled(enabled) {
+      flashButton.disabled = !enabled;
       installer.style.pointerEvents = enabled ? "" : "none";
       installer.style.opacity = enabled ? "1" : "0.75";
+    }
+
+    function syncActionButtons() {
+      if (backupInProgress) {
+        backupButton.disabled = true;
+        setFlashButtonEnabled(false);
+        return;
+      }
+      if (serialSupported) {
+        backupButton.disabled = false;
+      }
     }
 
     function revokeManifestUrl() {
@@ -262,9 +659,15 @@
       currentManifestUrl = null;
     }
 
+    function getSelectedMode() {
+      return document.querySelector("input[name='flash-mode']:checked").value;
+    }
+
     async function updateMode(mode) {
       const response = await fetch(manifests[mode]);
-      if (!response.ok) throw new Error(`无法获取刷机配置文件：状态 ${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        throw new Error(`Failed to load the manifest file: ${response.status} ${response.statusText}`);
+      }
       const manifest = await response.json();
       if (ghproxyToggle.checked) {
         manifest.builds = (manifest.builds || []).map((build) => ({
@@ -280,7 +683,9 @@
       revokeManifestUrl();
       currentManifestUrl = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: "application/json" }));
       installer.setAttribute("manifest", currentManifestUrl);
-      summary.textContent = summaryText[mode];
+      summary.innerHTML = summaryText[mode];
+      currentModeStat.textContent = mode === "preserve" ? "Safe update" : "Factory restore";
+      logLine(`Flash mode changed to ${mode === "preserve" ? "Safe update" : "Factory restore"}.`);
     }
 
     function markEraseUnavailable() {
@@ -289,8 +694,30 @@
       if (eraseRadio.checked) {
         const preserve = document.querySelector("input[value='preserve']");
         preserve.checked = true;
-        updateMode("preserve");
+        updateMode("preserve").catch((error) => {
+          updateReleaseNote(formatErrorMessage(error, "Failed to switch back to safe update mode"), true);
+          setFlashButtonEnabled(false);
+        });
       }
+      logLine("Factory restore was disabled because littlefs.bin is not available.", "warn");
+    }
+
+    function updateBuildMetadata(release) {
+      const assets = release.assets || [];
+      const assetTimes = assets
+        .filter((asset) => requiredByMode.preserve.includes(asset.name))
+        .map((asset) => asset.updated_at || asset.created_at)
+        .filter(Boolean)
+        .map((value) => new Date(value))
+        .filter((date) => !Number.isNaN(date.getTime()));
+
+      const newestAssetDate = assetTimes.length > 0
+        ? new Date(Math.max(...assetTimes.map((date) => date.getTime())))
+        : null;
+
+      buildDate.textContent = newestAssetDate ? formatTimestamp(newestAssetDate.toISOString()) : "Unknown";
+      releaseDate.textContent = formatTimestamp(release.published_at || release.created_at);
+      releaseTag.textContent = release.tag_name || "latest";
     }
 
     async function loadReleaseInfo() {
@@ -304,27 +731,106 @@
         const preserveReady = requiredByMode.preserve.every((name) => assetNames.has(name));
         const eraseReady = requiredByMode.erase.every((name) => assetNames.has(name));
 
+        updateBuildMetadata(release);
+
         if (!preserveReady) {
-          updateReleaseNote("当前 latest release 缺少基础固件文件，暂时无法在线刷机。", true);
-          setButtonEnabled(false);
+          updateReleaseNote("The latest release tag is missing the required base firmware files, so flashing is temporarily unavailable.", true);
+          setFlashButtonEnabled(false);
           markEraseUnavailable();
           return;
         }
 
-        const published = release.published_at
-          ? new Date(release.published_at).toLocaleString("zh-CN", { hour12: false })
-          : "未知时间";
+        const newestAsset = (release.assets || [])
+          .filter((asset) => requiredByMode.preserve.includes(asset.name))
+          .sort((left, right) => new Date(right.updated_at || 0) - new Date(left.updated_at || 0))[0];
+        const buildStamp = newestAsset ? formatTimestamp(newestAsset.updated_at || newestAsset.created_at) : "Unknown";
+        const releaseStamp = formatTimestamp(release.published_at || release.created_at);
+
         if (eraseReady) {
-          updateReleaseNote(`已读取 latest release：${release.name || "Latest Build"}（${published}），可使用保留数据或全量覆盖两种模式。`);
+          updateReleaseNote(`Release <strong>${release.name || "Latest Build"}</strong> is ready. Firmware asset build date: <strong>${buildStamp}</strong>. Release record date: <strong>${releaseStamp}</strong>.`);
         } else {
-          updateReleaseNote(`已读取 latest release：${release.name || "Latest Build"}（${published}）。当前缺少 littlefs.bin，已自动禁用“全量覆盖恢复”。`);
+          updateReleaseNote(`Release <strong>${release.name || "Latest Build"}</strong> is ready, but <code>littlefs.bin</code> is missing. Safe update stays available and the build date is <strong>${buildStamp}</strong>.`, true);
           markEraseUnavailable();
         }
-        setButtonEnabled(true);
+        setFlashButtonEnabled(true);
       } catch (error) {
-        updateReleaseNote(`读取 GitHub Release 元数据失败：${error.message}。已回退为仅保留“保留数据更新”模式；若 latest 资产可访问，仍可继续刷机。`, true);
-        setButtonEnabled(true);
+        buildDate.textContent = "Unknown";
+        releaseDate.textContent = "Unknown";
+        updateReleaseNote(`Failed to load release metadata: ${error.message}. The page falls back to safe update mode only; flashing can still continue if the release assets are reachable.`, true);
+        setFlashButtonEnabled(true);
         markEraseUnavailable();
+      }
+    }
+
+    async function ensureEsptoolModule() {
+      if (!esptoolModulePromise) {
+        esptoolModulePromise = import("https://esm.sh/esptool-js@0.5.7?bundle");
+      }
+      return esptoolModulePromise;
+    }
+
+    function updateBackupProgress(doneBytes, totalBytes) {
+      const percent = Math.min(100, Math.round((doneBytes / totalBytes) * 100));
+      backupProgress.hidden = false;
+      backupProgress.value = percent;
+      backupStatus.textContent = `Reading LittleFS backup… ${percent}% (${Math.round(doneBytes / 1024)} KB / ${Math.round(totalBytes / 1024)} KB)`;
+    }
+
+    function downloadBackup(data) {
+      const filenameDate = new Date().toISOString().replace(/[:.]/g, "-");
+      const fileName = `${backupFilenamePrefix}-${filenameDate}.bin`;
+      const blob = new Blob([data], { type: "application/octet-stream" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      return fileName;
+    }
+
+    async function handleBackup() {
+      if (!serialSupported || backupInProgress) return;
+
+      backupInProgress = true;
+      backupProgress.hidden = false;
+      backupProgress.value = 0;
+      syncActionButtons();
+      setBackupStatus(`Starting backup from ${toHex(littleFs.offset)} (${toHex(littleFs.size)} bytes)…`);
+
+      let transport = null;
+      try {
+        const { ESPLoader, Transport } = await ensureEsptoolModule();
+        const port = await navigator.serial.requestPort({});
+        transport = new Transport(port, true);
+        const loader = new ESPLoader({
+          transport,
+          baudrate: 115200,
+          terminal: createLoaderTerminal("backup"),
+        });
+
+        const chip = await loader.main();
+        logLine(`Backup connection opened for ${chip}.`);
+        const data = await loader.readFlash(littleFs.offset, littleFs.size, (_packet, doneBytes, totalBytes) => {
+          updateBackupProgress(doneBytes, totalBytes);
+        });
+        const fileName = downloadBackup(data);
+        backupProgress.value = 100;
+        setBackupStatus(`Backup complete. Saved ${fileName}.`);
+      } catch (error) {
+        setBackupStatus(formatErrorMessage(error, "Backup failed"), true);
+      } finally {
+        if (transport) {
+          try {
+            await transport.disconnect();
+          } catch (disconnectError) {
+            logLine(formatErrorMessage(disconnectError, "Backup transport disconnect reported an error"), "warn");
+          }
+        }
+        backupInProgress = false;
+        syncActionButtons();
       }
     }
 
@@ -332,26 +838,44 @@
       radio.addEventListener("change", async () => {
         if (!radio.checked) return;
         try {
-          setButtonEnabled(false);
+          setFlashButtonEnabled(false);
           await updateMode(radio.value);
-          setButtonEnabled(true);
+          setFlashButtonEnabled(true);
         } catch (error) {
-          updateReleaseNote(formatErrorMessage(error, "切换刷机模式失败"), true);
-          setButtonEnabled(false);
+          updateReleaseNote(formatErrorMessage(error, "Failed to switch the flash mode"), true);
+          setFlashButtonEnabled(false);
         }
       });
     });
 
     ghproxyToggle.addEventListener("change", async () => {
-      const activeMode = document.querySelector("input[name='flash-mode']:checked").value;
+      const activeMode = getSelectedMode();
       try {
-        setButtonEnabled(false);
+        setFlashButtonEnabled(false);
         await updateMode(activeMode);
-        setButtonEnabled(true);
-        updateReleaseNote(releaseNoteBase, releaseNote ? releaseNote.classList.contains("error") : false);
+        setFlashButtonEnabled(true);
+        updateReleaseNote(releaseNoteBase, releaseNote.classList.contains("error"));
       } catch (error) {
-        updateReleaseNote(formatErrorMessage(error, "切换 ghproxy 镜像失败"), true);
-        setButtonEnabled(false);
+        updateReleaseNote(formatErrorMessage(error, "Failed to toggle ghproxy"), true);
+        setFlashButtonEnabled(false);
+      }
+    });
+
+    flashButton.addEventListener("click", () => {
+      logLine(`Flash flow opened in ${getSelectedMode() === "preserve" ? "Safe update" : "Factory restore"} mode.`);
+    });
+    backupButton.addEventListener("click", handleBackup);
+
+    clearLogButton.addEventListener("click", () => {
+      logWindow.textContent = "[cleared] Log window cleared.";
+    });
+
+    copyLogButton.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(logWindow.textContent);
+        logLine("Log copied to clipboard.");
+      } catch (error) {
+        logLine(formatErrorMessage(error, "Failed to copy the log"), "error");
       }
     });
 
@@ -359,12 +883,18 @@
       revokeManifestUrl();
     });
 
-    setButtonEnabled(false);
+    setFlashButtonEnabled(false);
     updateReleaseNote(releaseNoteBase);
-    Promise.all([updateMode("preserve"), loadReleaseInfo()]).catch((error) => {
-      updateReleaseNote(formatErrorMessage(error, "初始化刷机页面失败"), true);
-      setButtonEnabled(false);
-    });
+    Promise.all([updateMode("preserve"), loadReleaseInfo()])
+      .catch((error) => {
+        updateReleaseNote(formatErrorMessage(error, "Failed to initialize the flasher page"), true);
+        setFlashButtonEnabled(false);
+      })
+      .finally(() => {
+        isInitializing = false;
+        syncActionButtons();
+        logLine("Page initialization finished.");
+      });
   </script>
 </body>
 </html>
