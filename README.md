@@ -43,7 +43,7 @@ Notes:
 - Use Chrome or Edge because the site depends on Web Serial
 - The preserve-data mode is only safe when the partition layout has not changed
 - If GitHub's direct downloads are slow in your region, enable the `ghproxy` mirror toggle in the page
-- `ghproxy` only proxies the firmware download URLs; release metadata checks still use the GitHub API
+- `ghproxy` only proxies the firmware download URLs; release metadata checks still use the GitHub API, and the page auto-switches to `ghproxy` download links if GitHub API metadata reads fail (for example, `403`)
 - The page checks the `latest` release assets on load; if `littlefs.bin` is missing it automatically disables the full-restore option
 - If the base firmware assets (`bootloader.bin`, `partitions.bin`, `firmware.bin`) are missing, the page blocks flashing entirely
 - If the browser cannot reach the GitHub API metadata endpoint, the page falls back to preserve-data mode only

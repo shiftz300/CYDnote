@@ -257,7 +257,7 @@
           <input type="checkbox" id="ghproxy-toggle">
           <span>
             使用国内镜像 <code>ghproxy</code> 加速固件下载
-            <small>仅代理固件 bin 下载地址；Release 元数据仍从 GitHub API 读取。</small>
+            <small>仅代理固件 bin 下载地址；Release 元数据仍从 GitHub API 读取，若读取失败会自动切换到 ghproxy。</small>
           </span>
         </label>
       </div>
@@ -573,6 +573,15 @@
         }
         syncActionButtons();
       } catch (error) {
+        const isGithubApi403 = typeof error?.message === "string" && error.message.includes("GitHub API 403");
+        if (isGithubApi403 && !ghproxyToggle.checked) {
+          ghproxyToggle.checked = true;
+          try {
+            await updateMode(getSelectedMode());
+          } catch (mirrorError) {
+            logLine(formatErrorMessage(mirrorError, "自动切换 ghproxy 失败"), "warn");
+          }
+        }
         buildDate.textContent = "未知";
         releaseDate.textContent = "未知";
         flashAvailable = true;
