@@ -255,10 +255,10 @@
       <div class="mirror-panel">
         <label>
           <input type="checkbox" id="ghproxy-toggle">
-          <span>
-            使用国内镜像 <code>ghproxy</code> 加速固件下载
-            <small>仅代理固件 bin 下载地址；Release 元数据仍从 GitHub API 读取。</small>
-          </span>
+            <span>
+              使用国内镜像 <code>ghproxy</code> 加速固件下载
+              <small>若直连 GitHub API 失败，页面会自动尝试通过 <code>ghproxy</code> 拉取 Release 元数据。</small>
+            </span>
         </label>
       </div>
 
@@ -323,9 +323,13 @@
       preserve: "./manifest-preserve.json",
       erase: "./manifest-full.json",
     };
-    const releaseApi = "https://api.github.com/repos/shiftz300/CYDnote/releases/tags/latest";
     const githubDownloadPrefix = "https://github.com/";
     const ghproxyPrefix = "https://ghproxy.com/";
+    const releaseApi = "https://api.github.com/repos/shiftz300/CYDnote/releases/tags/latest";
+    const releaseApiCandidates = [
+      { url: releaseApi, label: "GitHub API" },
+      { url: `${ghproxyPrefix}${releaseApi}`, label: "ghproxy 镜像 API" },
+    ];
     const requiredByMode = {
       preserve: ["bootloader.bin", "partitions.bin", "firmware.bin"],
       erase: ["bootloader.bin", "partitions.bin", "firmware.bin", "littlefs.bin"],
@@ -538,13 +542,29 @@
       releaseTag.textContent = release.tag_name || "latest";
     }
 
+    async function fetchReleaseInfoWithFallback() {
+      let lastError = null;
+      for (const source of releaseApiCandidates) {
+        try {
+          const response = await fetch(source.url, {
+            headers: { Accept: "application/vnd.github+json" },
+          });
+          if (!response.ok) throw new Error(`${source.label} ${response.status}`);
+          return {
+            release: await response.json(),
+            sourceLabel: source.label,
+          };
+        } catch (error) {
+          lastError = error;
+          logLine(`读取 Release 元数据失败（${source.label}）：${error.message}`, "warn");
+        }
+      }
+      throw lastError || new Error("无法读取 Release 元数据");
+    }
+
     async function loadReleaseInfo() {
       try {
-        const response = await fetch(releaseApi, {
-          headers: { Accept: "application/vnd.github+json" },
-        });
-        if (!response.ok) throw new Error(`GitHub API ${response.status}`);
-        const release = await response.json();
+        const { release, sourceLabel } = await fetchReleaseInfoWithFallback();
         const assetNames = new Set((release.assets || []).map((asset) => asset.name));
         const preserveReady = requiredByMode.preserve.every((name) => assetNames.has(name));
         const eraseReady = requiredByMode.erase.every((name) => assetNames.has(name));
@@ -565,10 +585,13 @@
         const buildStamp = newestAsset ? formatTimestamp(newestAsset.updated_at || newestAsset.created_at) : "未知";
 
         flashAvailable = true;
+        const sourceSuffix = sourceLabel === "GitHub API" ? "" : `（元数据来源：${sourceLabel}）`;
         if (eraseReady) {
-          updateReleaseNote(`已读取 release：${release.name || "Latest Build"}。固件构建时间：${buildStamp}。`);
+          releaseNoteBase = `已读取 release：${release.name || "Latest Build"}。固件构建时间：${buildStamp}。${sourceSuffix}`;
+          updateReleaseNote(releaseNoteBase);
         } else {
-          updateReleaseNote(`已读取 release：${release.name || "Latest Build"}，但缺少 littlefs.bin，因此仅保留“保留数据更新”模式。`, true);
+          releaseNoteBase = `已读取 release：${release.name || "Latest Build"}，但缺少 littlefs.bin，因此仅保留“保留数据更新”模式。${sourceSuffix}`;
+          updateReleaseNote(releaseNoteBase, true);
           markEraseUnavailable();
         }
         syncActionButtons();
