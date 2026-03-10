@@ -41,4 +41,4 @@
 # Node.js deps
 node_modules/
 
-
+build.log
