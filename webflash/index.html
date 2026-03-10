@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CYDnote 在线刷机</title>
+  <title>CYDnote 在线刷机 / Web Flasher</title>
   <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
   <style>
     :root {
@@ -17,6 +17,10 @@
       --cyd-primary: #5cb8ff;
       --cyd-primary-soft: #8ed1ff;
       --cyd-text-soft: #d1d5db;
+      --cyd-error: #ff9ea2;
+    }
+    * {
+      box-sizing: border-box;
     }
     body {
       margin: 0;
@@ -39,14 +43,31 @@
       margin: 0 0 12px;
       font-size: 2rem;
     }
-    p, li {
+    h2 {
+      margin: 22px 0 12px;
+      font-size: 1.05rem;
+    }
+    p,
+    li,
+    label,
+    small {
       line-height: 1.65;
       color: var(--cyd-text-soft);
     }
-    .mode {
+    p {
+      margin: 0;
+    }
+    code {
+      color: var(--cyd-primary-soft);
+    }
+    .mode,
+    .backup-mode {
       display: grid;
       gap: 12px;
-      margin: 24px 0;
+      margin: 24px 0 0;
+    }
+    .backup-mode {
+      margin-top: 12px;
     }
     .option {
       display: flex;
@@ -71,13 +92,64 @@
       background: rgba(92, 184, 255, 0.1);
       box-shadow: inset 0 0 0 1px rgba(142, 209, 255, 0.24);
     }
-    .summary {
-      margin: 18px 0;
+    .option.disabled {
+      opacity: 0.58;
+    }
+    .summary,
+    .mirror-panel,
+    .backup-panel,
+    .meta,
+    .log-panel {
+      margin-top: 16px;
       padding: 14px 16px;
       border-radius: 12px;
+      border: 1px solid var(--cyd-border);
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .summary {
       background: rgba(92, 184, 255, 0.12);
       border: 1px solid rgba(142, 209, 255, 0.35);
       color: #dbeafe;
+    }
+    .mirror-panel label {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      cursor: pointer;
+      color: #fff;
+      font-weight: 600;
+    }
+    .mirror-panel input {
+      margin-top: 3px;
+      accent-color: var(--cyd-primary);
+    }
+    .mirror-panel small {
+      display: block;
+      margin-top: 4px;
+      color: var(--cyd-text-soft);
+      font-weight: 400;
+      line-height: 1.5;
+    }
+    .release-note {
+      margin: 12px 0 0;
+      color: var(--cyd-primary-soft);
+      font-size: 0.95rem;
+    }
+    .release-note.error,
+    .backup-status.error {
+      color: var(--cyd-error);
+    }
+    .meta {
+      display: grid;
+      gap: 8px;
+    }
+    .meta p {
+      margin: 0;
+    }
+    .actions {
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
     }
     button {
       appearance: none;
@@ -100,50 +172,6 @@
       background: var(--cyd-primary);
       border-color: var(--cyd-primary-soft);
     }
-    code {
-      color: var(--cyd-primary-soft);
-    }
-    .hint {
-      font-size: 0.95rem;
-      color: #9ca3af;
-    }
-    .release-note {
-      margin: 12px 0 0;
-      color: var(--cyd-primary-soft);
-      font-size: 0.95rem;
-    }
-    .mirror-panel {
-      margin: 16px 0 0;
-      padding: 12px 14px;
-      border-radius: 12px;
-      border: 1px solid var(--cyd-border);
-      background: rgba(255, 255, 255, 0.02);
-    }
-    .mirror-panel label {
-      display: flex;
-      gap: 10px;
-      align-items: flex-start;
-      cursor: pointer;
-      color: #fff;
-      font-weight: 600;
-    }
-    .mirror-panel input {
-      margin-top: 3px;
-      accent-color: var(--cyd-primary);
-    }
-    .mirror-panel small {
-      display: block;
-      margin-top: 4px;
-      color: var(--cyd-text-soft);
-      font-weight: 400;
-      line-height: 1.5;
-    }
-    .release-note.error {
-      color: #ff9ea2;
-    }
-    .option.disabled {
-      opacity: 0.58;
-    }
     button:disabled {
       cursor: not-allowed;
       color: #c7c7c7;
@@ -151,20 +179,66 @@
       border-color: #555;
       box-shadow: none;
     }
+    esp-web-install-button {
+      display: block;
+    }
+    esp-web-install-button::part(unsupported) {
+      width: 100%;
+    }
+    .hint {
+      margin-top: 12px;
+      font-size: 0.95rem;
+      color: #9ca3af;
+    }
+    .backup-panel strong {
+      color: #fff;
+    }
+    .backup-status {
+      margin-top: 10px;
+      min-height: 1.4rem;
+    }
+    .progress {
+      width: 100%;
+      margin-top: 12px;
+      height: 10px;
+      accent-color: var(--cyd-primary);
+    }
+    .log-panel {
+      margin-top: 18px;
+    }
+    .log-panel h2 {
+      margin-top: 0;
+    }
+    #log-window {
+      margin: 0;
+      min-height: 160px;
+      max-height: 260px;
+      overflow: auto;
+      padding: 14px;
+      border-radius: 10px;
+      border: 1px solid #252525;
+      background: #0f0f0f;
+      color: #d8e6f7;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.84rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
   </style>
 </head>
 <body>
   <main>
     <div class="card">
       <h1>CYDnote 在线刷机</h1>
-      <p>适用于 <code>ESP32-2432S028/ESP32-2432S028R (CYD)</code>。请使用支持 Web Serial 的 Chrome/Edge，并通过 USB 连接设备。</p>
+      <p>适用于 <code>ESP32-2432S028/ESP32-2432S028R (CYD)</code>。请使用支持 Web Serial 的 Chrome / Edge，并通过 USB 连接设备。</p>
 
       <div class="mode">
         <label class="option">
           <input type="radio" name="flash-mode" value="preserve" checked>
           <span>
             <strong>保留数据更新</strong>
-            仅更新引导、分区表和应用固件，<b>不覆盖</b> LittleFS 数据分区，适合日常升级。
+            仅更新引导、分区表和应用固件，不覆盖 LittleFS 数据分区，适合日常升级。
           </span>
         </label>
         <label class="option">
@@ -176,9 +250,8 @@
         </label>
       </div>
 
-      <div class="summary" id="mode-summary">
-        当前模式：保留数据更新（不会覆盖 <code>0x310000</code> 的 LittleFS 分区）。
-      </div>
+      <div class="summary" id="mode-summary">当前模式：保留数据更新，不覆盖 <code>0x310000</code> 的 LittleFS 分区。</div>
+
       <div class="mirror-panel">
         <label>
           <input type="checkbox" id="ghproxy-toggle">
@@ -188,23 +261,64 @@
           </span>
         </label>
       </div>
+
       <p class="release-note" id="release-note">正在读取 GitHub Release 构建文件…</p>
 
-      <esp-web-install-button id="installer" manifest="./manifest-preserve.json">
-        <button slot="activate">连接设备并开始刷机</button>
-      </esp-web-install-button>
+      <div class="meta">
+        <p>固件构建时间：<strong id="build-date">检查中…</strong></p>
+        <p>Release 记录时间：<strong id="release-date">检查中…</strong></p>
+        <p>Release 标签：<strong id="release-tag">latest</strong></p>
+      </div>
+
+      <div class="actions">
+        <esp-web-install-button id="installer" manifest="./manifest-preserve.json">
+          <button slot="activate" id="flash-button">连接设备并开始刷机</button>
+        </esp-web-install-button>
+      </div>
+
+      <div class="backup-panel">
+        <strong>设备备份</strong>
+        <div class="backup-mode">
+          <label class="option">
+            <input type="radio" name="backup-scope" value="littlefs" checked>
+            <span>
+              <strong>LittleFS 分区备份</strong>
+              读取 <code>0x310000</code> 开始的 LittleFS 分区，仅备份本地数据区。
+            </span>
+          </label>
+          <label class="option">
+            <input type="radio" name="backup-scope" value="full">
+            <span>
+              <strong>全量备份</strong>
+              从 <code>0x000000</code> 开始读取整颗 4MB Flash，包含引导、应用和数据分区。
+            </span>
+          </label>
+        </div>
+        <p class="hint" id="backup-summary">当前备份范围：LittleFS 分区。</p>
+        <div class="actions">
+          <button id="backup-button" type="button">开始备份</button>
+        </div>
+        <progress class="progress" id="backup-progress" value="0" max="100" hidden></progress>
+        <div class="backup-status" id="backup-status">准备开始备份。</div>
+      </div>
+
+      <div class="log-panel">
+        <h2>状态日志</h2>
+        <pre id="log-window" aria-live="polite">[等待] 页面初始化中…</pre>
+      </div>
 
       <ul>
         <li>若自动进入下载模式失败，请按住 <code>BOOT</code>，再点一次 <code>RESET</code> 后重试。</li>
-        <li>“保留数据更新”仅在分区表未变化时才能可靠保留既有数据。</li>
-        <li>本页会直接读取 GitHub Releases 中 <code>latest</code> 标签下的构建产物，无需再把 bin 文件放到网页目录。</li>
-        <li>如果在国内访问 GitHub 下载较慢，可勾选上方的 <code>ghproxy</code> 镜像加速。</li>
+        <li>“保留数据更新”仅在分区表未变化时才适合保留既有数据。</li>
+        <li>页面会直接读取 GitHub Releases 中 <code>latest</code> 标签下的构建产物。</li>
+        <li>页面显示的构建时间来自固件资产的上传/更新时间，不只看 Release 记录时间。</li>
+        <li>备份文件会以原始 <code>.bin</code> 格式下载到本地浏览器。</li>
       </ul>
       <p class="hint">本页使用 ESP Web Tools；manifest 已按本仓库分区表配置，并直接指向 GitHub Release 产物。</p>
     </div>
   </main>
 
-  <script>
+  <script type="module">
     const manifests = {
       preserve: "./manifest-preserve.json",
       erase: "./manifest-full.json",
@@ -216,22 +330,79 @@
       preserve: ["bootloader.bin", "partitions.bin", "firmware.bin"],
       erase: ["bootloader.bin", "partitions.bin", "firmware.bin", "littlefs.bin"],
     };
-
+    const backupTargets = {
+      littlefs: {
+        label: "LittleFS 分区",
+        offset: 0x310000,
+        size: 0x0E0000,
+        prefix: "cydnote-littlefs-backup",
+      },
+      full: {
+        label: "整机 Flash",
+        offset: 0x000000,
+        size: 0x400000,
+        prefix: "cydnote-full-backup",
+      },
+    };
     const summaryText = {
-      preserve: "当前模式：保留数据更新（不会覆盖 0x310000 的 LittleFS 分区）。",
-      erase: "当前模式：全量覆盖恢复（会写入 0x310000 的 LittleFS 分区并清空现有数据）。",
+      preserve: "当前模式：保留数据更新，不覆盖 0x310000 的 LittleFS 分区。",
+      erase: "当前模式：全量覆盖恢复，会写入 0x310000 的 LittleFS 分区并清空现有数据。",
     };
 
     const installer = document.getElementById("installer");
+    const flashButton = document.getElementById("flash-button");
+    const backupButton = document.getElementById("backup-button");
     const summary = document.getElementById("mode-summary");
     const releaseNote = document.getElementById("release-note");
-    const activateButton = installer.querySelector("button");
-    const radios = document.querySelectorAll("input[name='flash-mode']");
+    const buildDate = document.getElementById("build-date");
+    const releaseDate = document.getElementById("release-date");
+    const releaseTag = document.getElementById("release-tag");
+    const ghproxyToggle = document.getElementById("ghproxy-toggle");
     const eraseRadio = document.querySelector("input[value='erase']");
     const eraseOption = eraseRadio.closest(".option");
-    const ghproxyToggle = document.getElementById("ghproxy-toggle");
+    const flashModeRadios = document.querySelectorAll("input[name='flash-mode']");
+    const backupScopeRadios = document.querySelectorAll("input[name='backup-scope']");
+    const backupSummary = document.getElementById("backup-summary");
+    const backupProgress = document.getElementById("backup-progress");
+    const backupStatus = document.getElementById("backup-status");
+    const logWindow = document.getElementById("log-window");
+
+    const serialSupported = typeof navigator !== "undefined" && "serial" in navigator;
     let currentManifestUrl = null;
     let releaseNoteBase = "正在读取 GitHub Release 构建文件…";
+    let backupInProgress = false;
+    let flashAvailable = false;
+    let esptoolModulePromise = null;
+    const pageLocale = document.documentElement.lang || navigator.language || undefined;
+
+    function toHex(value) {
+      return `0x${value.toString(16).toUpperCase().padStart(6, "0")}`;
+    }
+
+    function formatSize(size) {
+      if (size >= 1024 * 1024) {
+        const mb = size / (1024 * 1024);
+        return `${Number.isInteger(mb) ? mb.toFixed(0) : mb.toFixed(2)} MB`;
+      }
+      return `${Math.round(size / 1024)} KB`;
+    }
+
+    function formatTimestamp(value) {
+      const date = value ? new Date(value) : null;
+      if (!date || Number.isNaN(date.getTime())) {
+        return "未知";
+      }
+      return date.toLocaleString(pageLocale, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+        timeZoneName: "short",
+      });
+    }
 
     function formatErrorMessage(error, fallback) {
       if (error && typeof error.message === "string" && error.message.trim()) {
@@ -240,20 +411,53 @@
       return fallback;
     }
 
-    function updateReleaseNote(text, isError = false) {
-      releaseNoteBase = text;
-      if (!releaseNote) return;
-      const mirrorEnabled = !!(ghproxyToggle && ghproxyToggle.checked);
-      releaseNote.textContent = mirrorEnabled
-        ? `${releaseNoteBase} 当前固件下载将通过 ghproxy 镜像。`
-        : releaseNoteBase;
-      releaseNote.classList.toggle("error", isError);
+    function logLine(message, level = "info") {
+      const stamp = new Date().toLocaleTimeString(pageLocale, { hour12: false });
+      const next = `[${stamp}] [${level}] ${message}`;
+      logWindow.textContent = `${logWindow.textContent.trimEnd()}\n${next}`.trim();
+      logWindow.scrollTop = logWindow.scrollHeight;
     }
 
-    function setButtonEnabled(enabled) {
-      activateButton.disabled = !enabled;
+    function createLoaderTerminal(prefix) {
+      let buffer = "";
+      return {
+        clean() {},
+        write(data) {
+          buffer += String(data).replace(/\r/g, "");
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          lines.filter(Boolean).forEach((line) => logLine(`${prefix}: ${line}`));
+        },
+        writeLine(data) {
+          this.write(`${data}\n`);
+        },
+      };
+    }
+
+    function setBackupStatus(text, isError = false) {
+      backupStatus.textContent = text;
+      backupStatus.classList.toggle("error", isError);
+      logLine(text, isError ? "error" : "info");
+    }
+
+    function updateReleaseNote(text, isError = false) {
+      releaseNoteBase = text;
+      releaseNote.textContent = ghproxyToggle.checked
+        ? `${text} 当前固件下载将通过 ghproxy 镜像。`
+        : text;
+      releaseNote.classList.toggle("error", isError);
+      logLine(releaseNote.textContent, isError ? "error" : "info");
+    }
+
+    function setFlashButtonEnabled(enabled) {
+      flashButton.disabled = !enabled;
       installer.style.pointerEvents = enabled ? "" : "none";
       installer.style.opacity = enabled ? "1" : "0.75";
+    }
+
+    function syncActionButtons() {
+      setFlashButtonEnabled(flashAvailable && !backupInProgress);
+      backupButton.disabled = !serialSupported || backupInProgress;
     }
 
     function revokeManifestUrl() {
@@ -262,9 +466,26 @@
       currentManifestUrl = null;
     }
 
+    function getSelectedMode() {
+      return document.querySelector("input[name='flash-mode']:checked").value;
+    }
+
+    function getSelectedBackupTarget() {
+      return backupTargets[document.querySelector("input[name='backup-scope']:checked").value];
+    }
+
+    function updateBackupSummary() {
+      const target = getSelectedBackupTarget();
+      backupSummary.textContent = `当前备份范围：${target.label}（起始 ${toHex(target.offset)}，大小 ${formatSize(target.size)}）。`;
+      backupButton.textContent = document.querySelector("input[name='backup-scope']:checked").value === "full" ? "开始全量备份" : "开始备份";
+      logLine(`备份范围已切换为${target.label}。`);
+    }
+
     async function updateMode(mode) {
       const response = await fetch(manifests[mode]);
-      if (!response.ok) throw new Error(`无法获取刷机配置文件：状态 ${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        throw new Error(`无法读取 manifest：${response.status} ${response.statusText}`);
+      }
       const manifest = await response.json();
       if (ghproxyToggle.checked) {
         manifest.builds = (manifest.builds || []).map((build) => ({
@@ -281,16 +502,40 @@
       currentManifestUrl = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: "application/json" }));
       installer.setAttribute("manifest", currentManifestUrl);
       summary.textContent = summaryText[mode];
+      logLine(`刷机模式已切换为${mode === "preserve" ? "保留数据更新" : "全量覆盖恢复"}。`);
     }
 
     function markEraseUnavailable() {
       eraseRadio.disabled = true;
       eraseOption.classList.add("disabled");
       if (eraseRadio.checked) {
-        const preserve = document.querySelector("input[value='preserve']");
-        preserve.checked = true;
-        updateMode("preserve");
+        const preserveRadio = document.querySelector("input[value='preserve']");
+        preserveRadio.checked = true;
+        updateMode("preserve").catch((error) => {
+          updateReleaseNote(formatErrorMessage(error, "切回保留数据更新失败"), true);
+          flashAvailable = false;
+          syncActionButtons();
+        });
       }
+      logLine("由于缺少 littlefs.bin，已禁用全量覆盖恢复模式。", "warn");
+    }
+
+    function updateBuildMetadata(release) {
+      const assets = release.assets || [];
+      const assetTimes = assets
+        .filter((asset) => requiredByMode.preserve.includes(asset.name))
+        .map((asset) => asset.updated_at || asset.created_at)
+        .filter(Boolean)
+        .map((value) => new Date(value))
+        .filter((date) => !Number.isNaN(date.getTime()));
+
+      const newestAssetDate = assetTimes.length > 0
+        ? new Date(Math.max(...assetTimes))
+        : null;
+
+      buildDate.textContent = newestAssetDate ? formatTimestamp(newestAssetDate.toISOString()) : "未知";
+      releaseDate.textContent = formatTimestamp(release.published_at || release.created_at);
+      releaseTag.textContent = release.tag_name || "latest";
     }
 
     async function loadReleaseInfo() {
@@ -304,66 +549,165 @@
         const preserveReady = requiredByMode.preserve.every((name) => assetNames.has(name));
         const eraseReady = requiredByMode.erase.every((name) => assetNames.has(name));
 
+        updateBuildMetadata(release);
+
         if (!preserveReady) {
-          updateReleaseNote("当前 latest release 缺少基础固件文件，暂时无法在线刷机。", true);
-          setButtonEnabled(false);
+          flashAvailable = false;
+          updateReleaseNote("latest release 缺少基础固件文件，暂时无法在线刷机。", true);
           markEraseUnavailable();
+          syncActionButtons();
           return;
         }
 
-        const published = release.published_at
-          ? new Date(release.published_at).toLocaleString("zh-CN", { hour12: false })
-          : "未知时间";
+        const newestAsset = (release.assets || [])
+          .filter((asset) => requiredByMode.preserve.includes(asset.name))
+          .sort((left, right) => new Date(right.updated_at || right.created_at || 0) - new Date(left.updated_at || left.created_at || 0))[0];
+        const buildStamp = newestAsset ? formatTimestamp(newestAsset.updated_at || newestAsset.created_at) : "未知";
+
+        flashAvailable = true;
         if (eraseReady) {
-          updateReleaseNote(`已读取 latest release：${release.name || "Latest Build"}（${published}），可使用保留数据或全量覆盖两种模式。`);
+          updateReleaseNote(`已读取 release：${release.name || "Latest Build"}。固件构建时间：${buildStamp}。`);
         } else {
-          updateReleaseNote(`已读取 latest release：${release.name || "Latest Build"}（${published}）。当前缺少 littlefs.bin，已自动禁用“全量覆盖恢复”。`);
+          updateReleaseNote(`已读取 release：${release.name || "Latest Build"}，但缺少 littlefs.bin，因此仅保留“保留数据更新”模式。`, true);
           markEraseUnavailable();
         }
-        setButtonEnabled(true);
+        syncActionButtons();
       } catch (error) {
-        updateReleaseNote(`读取 GitHub Release 元数据失败：${error.message}。已回退为仅保留“保留数据更新”模式；若 latest 资产可访问，仍可继续刷机。`, true);
-        setButtonEnabled(true);
+        buildDate.textContent = "未知";
+        releaseDate.textContent = "未知";
+        flashAvailable = true;
+        updateReleaseNote(`读取 Release 元数据失败：${error.message}。页面将只保留基础刷机能力。`, true);
         markEraseUnavailable();
+        syncActionButtons();
       }
     }
 
-    radios.forEach((radio) => {
+    async function ensureEsptoolModule() {
+      if (!esptoolModulePromise) {
+        esptoolModulePromise = import("https://esm.sh/esptool-js@0.5.7?bundle");
+      }
+      return esptoolModulePromise;
+    }
+
+    function updateBackupProgress(target, doneBytes, totalBytes) {
+      const percent = Math.min(100, Math.round((doneBytes / totalBytes) * 100));
+      backupProgress.hidden = false;
+      backupProgress.value = percent;
+      backupStatus.textContent = `正在读取${target.label}… ${percent}%（${Math.round(doneBytes / 1024)} KB / ${Math.round(totalBytes / 1024)} KB）`;
+    }
+
+    function downloadBackup(data, target) {
+      const filenameDate = new Date().toISOString().replace(/[:.]/g, "-").replace("T", "-").replace("Z", "");
+      const fileName = `${target.prefix}-${filenameDate}.bin`;
+      const blob = new Blob([data], { type: "application/octet-stream" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      return fileName;
+    }
+
+    async function handleBackup() {
+      if (!serialSupported || backupInProgress) return;
+
+      const target = getSelectedBackupTarget();
+      backupInProgress = true;
+      backupProgress.hidden = false;
+      backupProgress.value = 0;
+      syncActionButtons();
+      setBackupStatus(`开始备份${target.label}（${toHex(target.offset)}，${formatSize(target.size)}）…`);
+
+      let transport = null;
+      try {
+        const { ESPLoader, Transport } = await ensureEsptoolModule();
+        const port = await navigator.serial.requestPort({});
+        transport = new Transport(port, true);
+        const loader = new ESPLoader({
+          transport,
+          baudrate: 115200,
+          terminal: createLoaderTerminal("backup"),
+        });
+
+        const chip = await loader.main();
+        logLine(`已连接设备：${chip}。`);
+        const data = await loader.readFlash(target.offset, target.size, (_packet, doneBytes, totalBytes) => {
+          updateBackupProgress(target, doneBytes, totalBytes);
+        });
+        const fileName = downloadBackup(data, target);
+        backupProgress.value = 100;
+        setBackupStatus(`备份完成：${fileName}`);
+      } catch (error) {
+        setBackupStatus(formatErrorMessage(error, `${target.label}备份失败`), true);
+      } finally {
+        if (transport) {
+          try {
+            await transport.disconnect();
+          } catch (disconnectError) {
+            logLine(formatErrorMessage(disconnectError, "断开备份连接时出现提示"), "warn");
+          }
+        }
+        backupInProgress = false;
+        syncActionButtons();
+      }
+    }
+
+    flashModeRadios.forEach((radio) => {
       radio.addEventListener("change", async () => {
         if (!radio.checked) return;
         try {
-          setButtonEnabled(false);
+          setFlashButtonEnabled(false);
           await updateMode(radio.value);
-          setButtonEnabled(true);
+          syncActionButtons();
         } catch (error) {
+          flashAvailable = false;
           updateReleaseNote(formatErrorMessage(error, "切换刷机模式失败"), true);
-          setButtonEnabled(false);
+          syncActionButtons();
         }
       });
     });
 
+    backupScopeRadios.forEach((radio) => {
+      radio.addEventListener("change", () => {
+        if (radio.checked) updateBackupSummary();
+      });
+    });
+
     ghproxyToggle.addEventListener("change", async () => {
-      const activeMode = document.querySelector("input[name='flash-mode']:checked").value;
       try {
-        setButtonEnabled(false);
-        await updateMode(activeMode);
-        setButtonEnabled(true);
-        updateReleaseNote(releaseNoteBase, releaseNote ? releaseNote.classList.contains("error") : false);
+        setFlashButtonEnabled(false);
+        await updateMode(getSelectedMode());
+        syncActionButtons();
+        updateReleaseNote(releaseNoteBase, releaseNote.classList.contains("error"));
       } catch (error) {
-        updateReleaseNote(formatErrorMessage(error, "切换 ghproxy 镜像失败"), true);
-        setButtonEnabled(false);
+        flashAvailable = false;
+        updateReleaseNote(formatErrorMessage(error, "切换 ghproxy 失败"), true);
+        syncActionButtons();
       }
     });
+
+    flashButton.addEventListener("click", () => {
+      logLine(`已打开刷机流程：${getSelectedMode() === "preserve" ? "保留数据更新" : "全量覆盖恢复"}。`);
+    });
+    backupButton.addEventListener("click", handleBackup);
 
     window.addEventListener("beforeunload", () => {
       revokeManifestUrl();
     });
 
-    setButtonEnabled(false);
+    updateBackupSummary();
+    if (!serialSupported) {
+      setBackupStatus("当前浏览器不支持 Web Serial，无法使用备份功能。", true);
+    }
+    syncActionButtons();
     updateReleaseNote(releaseNoteBase);
     Promise.all([updateMode("preserve"), loadReleaseInfo()]).catch((error) => {
+      flashAvailable = false;
       updateReleaseNote(formatErrorMessage(error, "初始化刷机页面失败"), true);
-      setButtonEnabled(false);
+      syncActionButtons();
     });
   </script>
 </body>
