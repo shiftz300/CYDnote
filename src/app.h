@@ -253,8 +253,11 @@ private:
         if (!editor.isReadChunkMode()) return;
         if (read_chunk_offsets.empty()) return;
         if (read_chunk_index >= read_chunk_offsets.size()) return;
-        uint64_t next_offset64 = (uint64_t)read_chunk_offsets[read_chunk_index] + (uint64_t)read_chunk_bytes;
-        if (next_offset64 > (uint64_t)SIZE_MAX || next_offset64 >= read_chunk_file_size || read_chunk_bytes == 0) return;
+        uint64_t current_offset64 = (uint64_t)read_chunk_offsets[read_chunk_index];
+        if (read_chunk_bytes == 0 || current_offset64 >= read_chunk_file_size) return;
+        if ((uint64_t)read_chunk_bytes > (read_chunk_file_size - current_offset64)) return;
+        uint64_t next_offset64 = current_offset64 + (uint64_t)read_chunk_bytes;
+        if (next_offset64 > (uint64_t)SIZE_MAX || next_offset64 >= read_chunk_file_size) return;
         size_t next_offset = (size_t)next_offset64;
         if (read_chunk_index + 1 < read_chunk_offsets.size()) {
             read_chunk_index++;
