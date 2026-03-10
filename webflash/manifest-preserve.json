@@ -1,0 +1,15 @@
+{
+  "name": "CYDnote",
+  "version": "latest",
+  "new_install_prompt_erase": false,
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [
+        { "path": "https://github.com/shiftz300/CYDnote/releases/download/latest/bootloader.bin", "offset": 4096 },
+        { "path": "https://github.com/shiftz300/CYDnote/releases/download/latest/partitions.bin", "offset": 32768 },
+        { "path": "https://github.com/shiftz300/CYDnote/releases/download/latest/firmware.bin", "offset": 65536 }
+      ]
+    }
+  ]
+}

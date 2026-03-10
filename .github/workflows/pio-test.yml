@@ -36,6 +36,9 @@ jobs:
       - name: Build firmware
         run: pio run -e "$PIO_ENV"
 
+      - name: Build LittleFS image
+        run: pio run -e "$PIO_ENV" -t buildfs
+
       - name: Upload firmware to Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -46,6 +49,7 @@ jobs:
             ".pio/build/$PIO_ENV/firmware.bin"
             ".pio/build/$PIO_ENV/bootloader.bin"
             ".pio/build/$PIO_ENV/partitions.bin"
+            ".pio/build/$PIO_ENV/littlefs.bin"
           )
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then

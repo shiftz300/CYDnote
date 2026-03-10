@@ -12,6 +12,42 @@ Chinese version: `README.zh-CN.md`
 3. Before first use, upload `data/` to LittleFS if needed:
    - `pio run -e esp32-2432s028r -t uploadfs`
 
+## Online flashing website
+
+This repository now includes a minimal web flasher page at `webflash/index.html`.
+
+It offers two flashing modes:
+
+- **Preserve data update**: writes `bootloader.bin`, `partitions.bin`, and `firmware.bin` from the `latest` release only, leaving the LittleFS data partition untouched
+- **Full restore**: also writes `littlefs.bin` from the `latest` release to `0x310000`, replacing any existing on-device local data
+
+Setup steps:
+
+1. Make sure GitHub Actions has published the firmware artifacts to the repository's `latest` release
+2. Publish the `webflash/` directory as-is:
+   - `webflash/index.html`
+   - `webflash/manifest-preserve.json`
+   - `webflash/manifest-full.json`
+3. Host that directory on any HTTPS static hosting service such as GitHub Pages, Netlify, or Vercel
+
+If you want Netlify to deploy directly from this repository, a root-level `netlify.toml` is included:
+
+- Netlify can publish the `webflash/` directory directly
+- The page loads firmware binaries from the repository's `latest` release assets
+- No firmware build step is required inside Netlify
+- The page also offers an optional `ghproxy` mirror toggle for faster firmware downloads in mainland China
+
+Notes:
+
+- Use Chrome or Edge because the site depends on Web Serial
+- The preserve-data mode is only safe when the partition layout has not changed
+- If GitHub's direct downloads are slow in your region, enable the `ghproxy` mirror toggle in the page
+- `ghproxy` only proxies the firmware download URLs; release metadata checks still use the GitHub API
+- The page checks the `latest` release assets on load; if `littlefs.bin` is missing it automatically disables the full-restore option
+- If the base firmware assets (`bootloader.bin`, `partitions.bin`, `firmware.bin`) are missing, the page blocks flashing entirely
+- If the browser cannot reach the GitHub API metadata endpoint, the page falls back to preserve-data mode only
+- The current board configuration is classic `ESP32`, not an `ESP32-S3` OPI PSRAM target
+
 ## Warning
 
 - THIS PROJECT **ONLY SUPPORTS** `ESP32-2432S028/ESP32-2432S028R (CYD)` HARDWARE.

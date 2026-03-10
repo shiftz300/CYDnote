@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CYDnote 在线刷机</title>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #111;
+      color: #f9fafb;
+      --cyd-bg: #111111;
+      --cyd-panel: #1e1e1e;
+      --cyd-border: #404040;
+      --cyd-primary: #5cb8ff;
+      --cyd-primary-soft: #8ed1ff;
+      --cyd-text-soft: #d1d5db;
+    }
+    body {
+      margin: 0;
+      background: linear-gradient(180deg, #111111 0%, #171717 100%);
+    }
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+    .card {
+      background: rgba(30, 30, 30, 0.95);
+      border: 1px solid var(--cyd-border);
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(10px);
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 2rem;
+    }
+    p, li {
+      line-height: 1.65;
+      color: var(--cyd-text-soft);
+    }
+    .mode {
+      display: grid;
+      gap: 12px;
+      margin: 24px 0;
+    }
+    .option {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 14px 16px;
+      border-radius: 12px;
+      border: 1px solid var(--cyd-border);
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .option input {
+      margin-top: 4px;
+      accent-color: var(--cyd-primary);
+    }
+    .option strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #fff;
+    }
+    .option:has(input:checked) {
+      border-color: var(--cyd-primary-soft);
+      background: rgba(92, 184, 255, 0.1);
+      box-shadow: inset 0 0 0 1px rgba(142, 209, 255, 0.24);
+    }
+    .summary {
+      margin: 18px 0;
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: rgba(92, 184, 255, 0.12);
+      border: 1px solid rgba(142, 209, 255, 0.35);
+      color: #dbeafe;
+    }
+    button {
+      appearance: none;
+      border: 1px solid var(--cyd-primary-soft);
+      border-radius: 10px;
+      padding: 14px 22px;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #fff;
+      background: var(--cyd-panel);
+      cursor: pointer;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+      transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+    button:hover {
+      background: rgba(92, 184, 255, 0.14);
+      border-color: var(--cyd-primary);
+    }
+    button:active {
+      background: var(--cyd-primary);
+      border-color: var(--cyd-primary-soft);
+    }
+    code {
+      color: var(--cyd-primary-soft);
+    }
+    .hint {
+      font-size: 0.95rem;
+      color: #9ca3af;
+    }
+    .release-note {
+      margin: 12px 0 0;
+      color: var(--cyd-primary-soft);
+      font-size: 0.95rem;
+    }
+    .mirror-panel {
+      margin: 16px 0 0;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--cyd-border);
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .mirror-panel label {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      cursor: pointer;
+      color: #fff;
+      font-weight: 600;
+    }
+    .mirror-panel input {
+      margin-top: 3px;
+      accent-color: var(--cyd-primary);
+    }
+    .mirror-panel small {
+      display: block;
+      margin-top: 4px;
+      color: var(--cyd-text-soft);
+      font-weight: 400;
+      line-height: 1.5;
+    }
+    .release-note.error {
+      color: #ff9ea2;
+    }
+    .option.disabled {
+      opacity: 0.58;
+    }
+    button:disabled {
+      cursor: not-allowed;
+      color: #c7c7c7;
+      background: #1a1a1a;
+      border-color: #555;
+      box-shadow: none;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="card">
+      <h1>CYDnote 在线刷机</h1>
+      <p>适用于 <code>ESP32-2432S028/ESP32-2432S028R (CYD)</code>。请使用支持 Web Serial 的 Chrome/Edge，并通过 USB 连接设备。</p>
+
+      <div class="mode">
+        <label class="option">
+          <input type="radio" name="flash-mode" value="preserve" checked>
+          <span>
+            <strong>保留数据更新</strong>
+            仅更新引导、分区表和应用固件，<b>不覆盖</b> LittleFS 数据分区，适合日常升级。
+          </span>
+        </label>
+        <label class="option">
+          <input type="radio" name="flash-mode" value="erase">
+          <span>
+            <strong>全量覆盖恢复</strong>
+            同时写入 LittleFS 镜像，会覆盖设备上的本地数据，适合首次初始化或恢复出厂状态。
+          </span>
+        </label>
+      </div>
+
+      <div class="summary" id="mode-summary">
+        当前模式：保留数据更新（不会覆盖 <code>0x310000</code> 的 LittleFS 分区）。
+      </div>
+      <div class="mirror-panel">
+        <label>
+          <input type="checkbox" id="ghproxy-toggle">
+          <span>
+            使用国内镜像 <code>ghproxy</code> 加速固件下载
+            <small>仅代理固件 bin 下载地址；Release 元数据仍从 GitHub API 读取。</small>
+          </span>
+        </label>
+      </div>
+      <p class="release-note" id="release-note">正在读取 GitHub Release 构建文件…</p>
+
+      <esp-web-install-button id="installer" manifest="./manifest-preserve.json">
+        <button slot="activate">连接设备并开始刷机</button>
+      </esp-web-install-button>
+
+      <ul>
+        <li>若自动进入下载模式失败，请按住 <code>BOOT</code>，再点一次 <code>RESET</code> 后重试。</li>
+        <li>“保留数据更新”仅在分区表未变化时才能可靠保留既有数据。</li>
+        <li>本页会直接读取 GitHub Releases 中 <code>latest</code> 标签下的构建产物，无需再把 bin 文件放到网页目录。</li>
+        <li>如果在国内访问 GitHub 下载较慢，可勾选上方的 <code>ghproxy</code> 镜像加速。</li>
+      </ul>
+      <p class="hint">本页使用 ESP Web Tools；manifest 已按本仓库分区表配置，并直接指向 GitHub Release 产物。</p>
+    </div>
+  </main>
+
+  <script>
+    const manifests = {
+      preserve: "./manifest-preserve.json",
+      erase: "./manifest-full.json",
+    };
+    const releaseApi = "https://api.github.com/repos/shiftz300/CYDnote/releases/tags/latest";
+    const githubDownloadPrefix = "https://github.com/";
+    const ghproxyPrefix = "https://ghproxy.com/";
+    const requiredByMode = {
+      preserve: ["bootloader.bin", "partitions.bin", "firmware.bin"],
+      erase: ["bootloader.bin", "partitions.bin", "firmware.bin", "littlefs.bin"],
+    };
+
+    const summaryText = {
+      preserve: "当前模式：保留数据更新（不会覆盖 0x310000 的 LittleFS 分区）。",
+      erase: "当前模式：全量覆盖恢复（会写入 0x310000 的 LittleFS 分区并清空现有数据）。",
+    };
+
+    const installer = document.getElementById("installer");
+    const summary = document.getElementById("mode-summary");
+    const releaseNote = document.getElementById("release-note");
+    const activateButton = installer.querySelector("button");
+    const radios = document.querySelectorAll("input[name='flash-mode']");
+    const eraseRadio = document.querySelector("input[value='erase']");
+    const eraseOption = eraseRadio.closest(".option");
+    const ghproxyToggle = document.getElementById("ghproxy-toggle");
+    let currentManifestUrl = null;
+    let releaseNoteBase = "正在读取 GitHub Release 构建文件…";
+
+    function formatErrorMessage(error, fallback) {
+      if (error && typeof error.message === "string" && error.message.trim()) {
+        return `${fallback}（${error.message}）`;
+      }
+      return fallback;
+    }
+
+    function updateReleaseNote(text, isError = false) {
+      releaseNoteBase = text;
+      if (!releaseNote) return;
+      const mirrorEnabled = !!(ghproxyToggle && ghproxyToggle.checked);
+      releaseNote.textContent = mirrorEnabled
+        ? `${releaseNoteBase} 当前固件下载将通过 ghproxy 镜像。`
+        : releaseNoteBase;
+      releaseNote.classList.toggle("error", isError);
+    }
+
+    function setButtonEnabled(enabled) {
+      activateButton.disabled = !enabled;
+      installer.style.pointerEvents = enabled ? "" : "none";
+      installer.style.opacity = enabled ? "1" : "0.75";
+    }
+
+    function revokeManifestUrl() {
+      if (!currentManifestUrl) return;
+      URL.revokeObjectURL(currentManifestUrl);
+      currentManifestUrl = null;
+    }
+
+    async function updateMode(mode) {
+      const response = await fetch(manifests[mode]);
+      if (!response.ok) throw new Error(`无法获取刷机配置文件：状态 ${response.status} ${response.statusText}`);
+      const manifest = await response.json();
+      if (ghproxyToggle.checked) {
+        manifest.builds = (manifest.builds || []).map((build) => ({
+          ...build,
+          parts: (build.parts || []).map((part) => ({
+            ...part,
+            path: typeof part.path === "string" && part.path.startsWith(githubDownloadPrefix)
+              ? `${ghproxyPrefix}${part.path}`
+              : part.path,
+          })),
+        }));
+      }
+      revokeManifestUrl();
+      currentManifestUrl = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: "application/json" }));
+      installer.setAttribute("manifest", currentManifestUrl);
+      summary.textContent = summaryText[mode];
+    }
+
+    function markEraseUnavailable() {
+      eraseRadio.disabled = true;
+      eraseOption.classList.add("disabled");
+      if (eraseRadio.checked) {
+        const preserve = document.querySelector("input[value='preserve']");
+        preserve.checked = true;
+        updateMode("preserve");
+      }
+    }
+
+    async function loadReleaseInfo() {
+      try {
+        const response = await fetch(releaseApi, {
+          headers: { Accept: "application/vnd.github+json" },
+        });
+        if (!response.ok) throw new Error(`GitHub API ${response.status}`);
+        const release = await response.json();
+        const assetNames = new Set((release.assets || []).map((asset) => asset.name));
+        const preserveReady = requiredByMode.preserve.every((name) => assetNames.has(name));
+        const eraseReady = requiredByMode.erase.every((name) => assetNames.has(name));
+
+        if (!preserveReady) {
+          updateReleaseNote("当前 latest release 缺少基础固件文件，暂时无法在线刷机。", true);
+          setButtonEnabled(false);
+          markEraseUnavailable();
+          return;
+        }
+
+        const published = release.published_at
+          ? new Date(release.published_at).toLocaleString("zh-CN", { hour12: false })
+          : "未知时间";
+        if (eraseReady) {
+          updateReleaseNote(`已读取 latest release：${release.name || "Latest Build"}（${published}），可使用保留数据或全量覆盖两种模式。`);
+        } else {
+          updateReleaseNote(`已读取 latest release：${release.name || "Latest Build"}（${published}）。当前缺少 littlefs.bin，已自动禁用“全量覆盖恢复”。`);
+          markEraseUnavailable();
+        }
+        setButtonEnabled(true);
+      } catch (error) {
+        updateReleaseNote(`读取 GitHub Release 元数据失败：${error.message}。已回退为仅保留“保留数据更新”模式；若 latest 资产可访问，仍可继续刷机。`, true);
+        setButtonEnabled(true);
+        markEraseUnavailable();
+      }
+    }
+
+    radios.forEach((radio) => {
+      radio.addEventListener("change", async () => {
+        if (!radio.checked) return;
+        try {
+          setButtonEnabled(false);
+          await updateMode(radio.value);
+          setButtonEnabled(true);
+        } catch (error) {
+          updateReleaseNote(formatErrorMessage(error, "切换刷机模式失败"), true);
+          setButtonEnabled(false);
+        }
+      });
+    });
+
+    ghproxyToggle.addEventListener("change", async () => {
+      const activeMode = document.querySelector("input[name='flash-mode']:checked").value;
+      try {
+        setButtonEnabled(false);
+        await updateMode(activeMode);
+        setButtonEnabled(true);
+        updateReleaseNote(releaseNoteBase, releaseNote ? releaseNote.classList.contains("error") : false);
+      } catch (error) {
+        updateReleaseNote(formatErrorMessage(error, "切换 ghproxy 镜像失败"), true);
+        setButtonEnabled(false);
+      }
+    });
+
+    window.addEventListener("beforeunload", () => {
+      revokeManifestUrl();
+    });
+
+    setButtonEnabled(false);
+    updateReleaseNote(releaseNoteBase);
+    Promise.all([updateMode("preserve"), loadReleaseInfo()]).catch((error) => {
+      updateReleaseNote(formatErrorMessage(error, "初始化刷机页面失败"), true);
+      setButtonEnabled(false);
+    });
+  </script>
+</body>
+</html>
