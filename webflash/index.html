@@ -352,7 +352,7 @@
       <section class="card hero">
         <div class="hero-copy">
           <span class="eyebrow">CYDnote Web Flasher</span>
-          <h1>Flash or back up your CYD from one page.</h1>
+          <h1>Flash or back up your CYD in one page.</h1>
           <p>
             Built for <code>ESP32-2432S028 / ESP32-2432S028R (CYD)</code>. Use Chrome or Edge with Web Serial,
             then connect the board over USB.
@@ -380,7 +380,6 @@
           <div class="mode-grid">
             <label class="option">
               <input type="radio" name="flash-mode" value="preserve" checked>
-              
               <span>
                 <strong>Safe update</strong>
                 Update the bootloader, partitions, and app only. LittleFS data is kept.
@@ -388,7 +387,6 @@
             </label>
             <label class="option">
               <input type="radio" name="flash-mode" value="erase">
-              
               <span>
                 <strong>Factory restore</strong>
                 Also flash the LittleFS image. This overwrites local device data.
