@@ -6,9 +6,9 @@
     {
       "chipFamily": "ESP32",
       "parts": [
-        { "path": "./bootloader.bin", "offset": 4096 },
-        { "path": "./partitions.bin", "offset": 32768 },
-        { "path": "./firmware.bin", "offset": 65536 }
+        { "path": "https://github.com/shiftz300/CYDnote/releases/download/latest/bootloader.bin", "offset": 4096 },
+        { "path": "https://github.com/shiftz300/CYDnote/releases/download/latest/partitions.bin", "offset": 32768 },
+        { "path": "https://github.com/shiftz300/CYDnote/releases/download/latest/firmware.bin", "offset": 65536 }
       ]
     }
   ]

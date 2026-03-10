@@ -1,6 +1,2 @@
 [build]
-  command = "python -m pip install --upgrade platformio && python -m platformio run -e esp32-2432s028r && python -m platformio run -e esp32-2432s028r -t buildfs && rm -rf webflash-dist && mkdir -p webflash-dist && cp webflash/index.html webflash/manifest-preserve.json webflash/manifest-full.json webflash-dist/ && cp .pio/build/esp32-2432s028r/bootloader.bin .pio/build/esp32-2432s028r/partitions.bin .pio/build/esp32-2432s028r/firmware.bin .pio/build/esp32-2432s028r/littlefs.bin webflash-dist/"
-  publish = "webflash-dist"
-
-[build.environment]
-  PYTHON_VERSION = "3.11"
+  publish = "webflash"

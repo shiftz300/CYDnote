@@ -18,35 +18,31 @@
 
 它提供两个刷机模式：
 
-- **保留数据更新**：写入 `bootloader.bin`、`partitions.bin`、`firmware.bin`，不覆盖 LittleFS 数据分区
-- **全量覆盖恢复**：额外写入 `littlefs.bin` 到 `0x310000`，会覆盖设备上已有的本地数据
+- **保留数据更新**：写入 `latest` release 中的 `bootloader.bin`、`partitions.bin`、`firmware.bin`，不覆盖 LittleFS 数据分区
+- **全量覆盖恢复**：额外写入 `latest` release 中的 `littlefs.bin` 到 `0x310000`，会覆盖设备上已有的本地数据
 
 搭建步骤：
 
-1. 先编译固件：
-   - `pio run -e esp32-2432s028r`
-2. 如果要支持“全量覆盖恢复”，再构建 LittleFS 镜像：
-   - `pio run -e esp32-2432s028r -t buildfs`
-3. 将以下文件复制到同一个静态站点目录中：
+1. 确保 GitHub Actions 已经把构建产物发布到仓库的 `latest` release
+2. 直接发布 `webflash/` 目录即可：
    - `webflash/index.html`
    - `webflash/manifest-preserve.json`
    - `webflash/manifest-full.json`
-   - `.pio/build/esp32-2432s028r/bootloader.bin`
-   - `.pio/build/esp32-2432s028r/partitions.bin`
-   - `.pio/build/esp32-2432s028r/firmware.bin`
-   - `.pio/build/esp32-2432s028r/littlefs.bin`
-4. 用 GitHub Pages、Netlify、Vercel 或任意 HTTPS 静态托管发布该目录
+3. 用 GitHub Pages、Netlify、Vercel 或任意 HTTPS 静态托管发布该目录
 
 如果你想直接把当前仓库连到 Netlify 一键部署，仓库根目录已经提供 `netlify.toml`：
 
-- Build command 会自动安装 PlatformIO、编译固件、构建 `littlefs.bin`
-- 然后把 `webflash/` 页面和生成的 bin 组装到 `webflash-dist/`
-- Netlify 只需要把仓库根目录作为站点导入即可
+- Netlify 直接发布 `webflash/` 目录
+- 页面会自动读取仓库 `latest` release 里的固件文件
+- 因此不需要再在 Netlify 中构建固件
 
 注意：
 
 - 浏览器需使用支持 Web Serial 的 Chrome / Edge
 - “保留数据更新”只在分区布局保持不变时才适合保留现有数据
+- 页面加载时会先检查 `latest` release 资产；若缺少 `littlefs.bin`，会自动禁用“全量覆盖恢复”
+- 若 `latest` release 中缺少基础固件文件（`bootloader.bin`、`partitions.bin`、`firmware.bin`），网页会阻止开始刷机
+- 若浏览器环境暂时无法访问 GitHub API，页面会回退为只保留“保留数据更新”模式
 - 本仓库当前板型配置为经典 `ESP32`，并非启用 OPI PSRAM 的 `ESP32-S3`
 
 ## 警示
