@@ -104,6 +104,53 @@ public:
         file.close();
         return true;
     }
+
+    bool readFileChunk(const char* path, size_t offset, size_t max_bytes, String& content, size_t& bytes_read) {
+        bytes_read = 0;
+        if (!initialized) return false;
+
+        content = "";
+        if (max_bytes == 0) return true;
+
+        FsFile file = sd.open(normalizePath(path).c_str(), O_RDONLY);
+        if (!file.isOpen()) {
+            Serial.print("Failed to open file: ");
+            Serial.println(path);
+            return false;
+        }
+
+        uint32_t file_size = (uint32_t)file.fileSize();
+        if (offset >= file_size) {
+            file.close();
+            return true;
+        }
+        if (!file.seek(offset)) {
+            file.close();
+            return false;
+        }
+
+        size_t remaining = (size_t)(file_size - (uint32_t)offset);
+        size_t target = remaining < max_bytes ? remaining : max_bytes;
+        if (target > 0) content.reserve(target + 1);
+
+        static constexpr size_t CHUNK = 512;
+        char buf[CHUNK + 1];
+        while (bytes_read < target) {
+            size_t want = target - bytes_read;
+            if (want > CHUNK) want = CHUNK;
+            int n = file.read(buf, want);
+            if (n <= 0) break;
+            buf[n] = '\0';
+            if (!content.concat(buf, (unsigned int)n)) {
+                file.close();
+                return false;
+            }
+            bytes_read += (size_t)n;
+        }
+
+        file.close();
+        return true;
+    }
     
     bool writeFile(const char* path, const String& content) {
         if (!initialized) return false;

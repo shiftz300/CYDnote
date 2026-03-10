@@ -22,6 +22,7 @@ private:
     static constexpr size_t IMAGE_GALLERY_MAX_ITEMS = 128;
     static constexpr size_t IMAGE_GALLERY_SCAN_ENTRY_LIMIT = 80;
     static constexpr size_t IMAGE_GALLERY_SCAN_IMAGE_LIMIT = 64;
+    static constexpr size_t READ_CHUNK_SIZE = 1536;
     AppMode current_mode;
     FileManager file_manager;
     Editor editor;
@@ -31,13 +32,17 @@ private:
     ApShareService ap_share;
     String current_filename;
     std::vector<String> image_gallery;
+    std::vector<size_t> read_chunk_offsets;
     int image_index;
+    size_t read_chunk_index;
+    size_t read_chunk_bytes;
+    uint64_t read_chunk_file_size;
     
     // Static wrapper for LVGL callbacks
     static AppManager* instance;
     
 public:
-    AppManager() : current_mode(MODE_FILE_MANAGER), sd_helper(nullptr), image_index(-1) {
+    AppManager() : current_mode(MODE_FILE_MANAGER), sd_helper(nullptr), image_index(-1), read_chunk_index(0), read_chunk_bytes(0), read_chunk_file_size(0) {
         instance = this;
     }
     
@@ -60,6 +65,10 @@ public:
             [this]() -> String { return this->ap_share.statusString(); }
         );
         editor.create([this](){ this->showFileManager(); }, [this](){ this->handleSave(); });
+        editor.setReadChunkNavigationCallbacks(
+            [this](){ this->showPrevReadChunk(); },
+            [this](){ this->showNextReadChunk(); }
+        );
         image_viewer.create(
             [this](){ this->showFileManager(); },
             [this](){ this->showPrevImage(); },
@@ -91,10 +100,13 @@ private:
         if (current_mode != MODE_EDITOR) {
             current_mode = MODE_EDITOR;
         }
-        
+
+        clearReadChunkState();
         current_filename = filename;
         editor.setTitle(filename);
         editor.setText("");
+        editor.setReadChunkMode(false);
+        editor.setReadChunkNavigationState(false, false);
         String content;
         if (readVirtualFile(filename, content)) editor.setText(content);
 
@@ -143,6 +155,11 @@ public:
     }
     
     void handleSave() {
+        if (editor.isReadChunkMode()) {
+            Serial.println("Read chunk mode is read-only");
+            if (menu_manager.isVisible()) menu_manager.toggle();
+            return;
+        }
         if (current_filename.isEmpty()) {
             current_filename = "L:/note.txt";
         }
@@ -168,7 +185,32 @@ public:
     }
     
     void handleReadMode() {
-        Serial.println("Read mode not yet implemented");
+        if (current_mode != MODE_EDITOR || current_filename.isEmpty()) {
+            menu_manager.toggle();
+            return;
+        }
+
+        if (editor.isReadChunkMode()) {
+            showEditorRaw(current_filename);
+            menu_manager.toggle();
+            return;
+        }
+
+        uint64_t file_size = 0;
+        if (!getVirtualFileSize(current_filename, file_size)) {
+            Serial.println("Read mode unavailable: size check failed");
+            menu_manager.toggle();
+            return;
+        }
+
+        clearReadChunkState();
+        read_chunk_file_size = file_size;
+        read_chunk_offsets.push_back(0);
+        read_chunk_index = 0;
+        if (!loadReadChunkAtIndex(false)) {
+            clearReadChunkState();
+            Serial.println("Read mode unavailable: chunk load failed");
+        }
         menu_manager.toggle();
     }
     
@@ -209,6 +251,94 @@ public:
     }
 
 private:
+    void clearReadChunkState() {
+        read_chunk_offsets.clear();
+        read_chunk_index = 0;
+        read_chunk_bytes = 0;
+        read_chunk_file_size = 0;
+    }
+
+    void showPrevReadChunk() {
+        if (!editor.isReadChunkMode()) return;
+        if (read_chunk_index == 0) return;
+        read_chunk_index--;
+        loadReadChunkAtIndex(true);
+    }
+
+    void showNextReadChunk() {
+        if (!editor.isReadChunkMode()) return;
+        if (read_chunk_offsets.empty()) return;
+        size_t next_offset = read_chunk_offsets[read_chunk_index] + read_chunk_bytes;
+        if ((uint64_t)next_offset >= read_chunk_file_size || read_chunk_bytes == 0) return;
+        if (read_chunk_index + 1 < read_chunk_offsets.size()) {
+            read_chunk_index++;
+            loadReadChunkAtIndex(false);
+            return;
+        }
+        read_chunk_offsets.push_back(next_offset);
+        read_chunk_index = read_chunk_offsets.size() - 1;
+        if (!loadReadChunkAtIndex(false)) {
+            read_chunk_offsets.pop_back();
+            read_chunk_index = read_chunk_offsets.empty() ? 0 : (read_chunk_offsets.size() - 1);
+        }
+    }
+
+    bool loadReadChunkAtIndex(bool anchor_end) {
+        if (read_chunk_offsets.empty() || read_chunk_index >= read_chunk_offsets.size()) return false;
+        String content;
+        size_t bytes_read = 0;
+        size_t offset = read_chunk_offsets[read_chunk_index];
+        if (!readVirtualFileChunk(current_filename, offset, READ_CHUNK_SIZE, content, bytes_read)) return false;
+        if (bytes_read == 0 && read_chunk_file_size > 0) return false;
+        trimIncompleteUtf8Tail(content, bytes_read, ((uint64_t)offset + (uint64_t)bytes_read) < read_chunk_file_size);
+        if (bytes_read == 0 && read_chunk_file_size > 0) return false;
+
+        read_chunk_bytes = bytes_read;
+        editor.setTitle(current_filename);
+        editor.setReadChunkMode(true);
+        editor.setReadChunkNavigationState(read_chunk_index > 0, ((uint64_t)offset + (uint64_t)read_chunk_bytes) < read_chunk_file_size);
+        editor.setReadChunkText(content, anchor_end);
+        return true;
+    }
+
+    size_t utf8CodepointBytes(uint8_t lead) const {
+        if ((lead & 0x80U) == 0) return 1;
+        if ((lead & 0xE0U) == 0xC0U) return 2;
+        if ((lead & 0xF0U) == 0xE0U) return 3;
+        if ((lead & 0xF8U) == 0xF0U) return 4;
+        return 1;
+    }
+
+    void trimIncompleteUtf8Tail(String& content, size_t& bytes_read, bool has_more) {
+        if (!has_more || bytes_read == 0) return;
+        const char* data = content.c_str();
+        if (!data) return;
+
+        size_t end = bytes_read;
+        size_t cont_bytes = 0;
+        while (cont_bytes < end && cont_bytes < 3) {
+            uint8_t c = (uint8_t)data[end - 1 - cont_bytes];
+            if ((c & 0xC0U) != 0x80U) break;
+            cont_bytes++;
+        }
+
+        if (cont_bytes == 0) {
+            size_t expected = utf8CodepointBytes((uint8_t)data[end - 1]);
+            if (expected > 1) end--;
+        } else if (cont_bytes < end) {
+            size_t lead_index = end - 1 - cont_bytes;
+            size_t expected = utf8CodepointBytes((uint8_t)data[lead_index]);
+            if (expected != (cont_bytes + 1)) end = lead_index;
+        } else {
+            end = 0;
+        }
+
+        if (end < bytes_read) {
+            content.remove(end);
+            bytes_read = end;
+        }
+    }
+
     bool readVirtualFile(const String& vpath, String& out) {
         char drive = driveOf(vpath);
         String path = innerPathOf(vpath);
@@ -234,6 +364,49 @@ private:
         }
         if (drive == 'D' && sd_helper && sd_helper->isInitialized()) {
             return sd_helper->readFile(path.c_str(), out);
+        }
+        return false;
+    }
+
+    bool readVirtualFileChunk(const String& vpath, size_t offset, size_t max_bytes, String& out, size_t& bytes_read) {
+        bytes_read = 0;
+        char drive = driveOf(vpath);
+        String path = innerPathOf(vpath);
+        if (drive == 'L') {
+            File f = LittleFS.open(path.c_str(), "r");
+            if (!f) return false;
+            out = "";
+            size_t file_size = (size_t)f.size();
+            if (offset >= file_size) {
+                f.close();
+                return true;
+            }
+            if (!f.seek(offset, SeekSet)) {
+                f.close();
+                return false;
+            }
+            size_t target = file_size - offset;
+            if (target > max_bytes) target = max_bytes;
+            if (target > 0) out.reserve(target + 1);
+            static constexpr size_t CHUNK = 512;
+            char buf[CHUNK + 1];
+            while (bytes_read < target) {
+                size_t want = target - bytes_read;
+                if (want > CHUNK) want = CHUNK;
+                int n = f.read((uint8_t*)buf, want);
+                if (n <= 0) break;
+                buf[n] = '\0';
+                if (!out.concat(buf, (unsigned int)n)) {
+                    f.close();
+                    return false;
+                }
+                bytes_read += (size_t)n;
+            }
+            f.close();
+            return true;
+        }
+        if (drive == 'D' && sd_helper && sd_helper->isInitialized()) {
+            return sd_helper->readFileChunk(path.c_str(), offset, max_bytes, out, bytes_read);
         }
         return false;
     }
@@ -464,4 +637,3 @@ private:
 AppManager* AppManager::instance = nullptr;
 
 #endif
-
