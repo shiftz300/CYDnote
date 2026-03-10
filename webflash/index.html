@@ -1,327 +1,223 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CYDnote Web Flasher</title>
+  <title>CYDnote 在线刷机 / Web Flasher</title>
   <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
   <style>
     :root {
       color-scheme: dark;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #101216;
-      color: #f8fafc;
-      --page-bg: #101216;
-      --card-bg: #171a21;
-      --panel-bg: #1d212b;
-      --panel-soft: rgba(255, 255, 255, 0.03);
-      --border: #313745;
-      --accent: #5cb8ff;
-      --accent-soft: #93d5ff;
-      --text-soft: #cbd5e1;
-      --ok: #7dd3a7;
-      --warn: #ffd07d;
-      --error: #ff9e9e;
-      --shadow: 0 20px 40px rgba(0, 0, 0, 0.34);
+      background: #111;
+      color: #f9fafb;
+      --cyd-bg: #111111;
+      --cyd-panel: #1e1e1e;
+      --cyd-border: #404040;
+      --cyd-primary: #5cb8ff;
+      --cyd-primary-soft: #8ed1ff;
+      --cyd-text-soft: #d1d5db;
+      --cyd-error: #ff9ea2;
     }
     * {
       box-sizing: border-box;
     }
     body {
       margin: 0;
-      background:
-        radial-gradient(circle at top, rgba(92, 184, 255, 0.14), transparent 28%),
-        linear-gradient(180deg, #101216 0%, #151922 100%);
-      color: #f8fafc;
+      background: linear-gradient(180deg, #111111 0%, #171717 100%);
     }
     main {
-      max-width: 960px;
+      max-width: 760px;
       margin: 0 auto;
-      padding: 28px 18px 40px;
-    }
-    .shell {
-      display: grid;
-      gap: 18px;
+      padding: 32px 20px 48px;
     }
     .card {
-      background: rgba(23, 26, 33, 0.96);
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      box-shadow: var(--shadow);
-      padding: 22px;
-      backdrop-filter: blur(12px);
-    }
-    .hero {
-      display: grid;
-      gap: 18px;
-      grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.9fr);
-      align-items: start;
-    }
-    .hero-copy {
-      display: grid;
-      gap: 12px;
-    }
-    .eyebrow {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      width: fit-content;
-      padding: 8px 12px;
-      border-radius: 999px;
-      border: 1px solid rgba(147, 213, 255, 0.32);
-      background: rgba(92, 184, 255, 0.12);
-      color: var(--accent-soft);
-      font-size: 0.92rem;
-      font-weight: 700;
-      letter-spacing: 0.02em;
+      background: rgba(30, 30, 30, 0.95);
+      border: 1px solid var(--cyd-border);
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(10px);
     }
     h1 {
-      margin: 0;
-      font-size: clamp(1.9rem, 4vw, 2.8rem);
-      line-height: 1.1;
+      margin: 0 0 12px;
+      font-size: 2rem;
+    }
+    h2 {
+      margin: 22px 0 12px;
+      font-size: 1.05rem;
     }
     p,
     li,
     label,
     small {
-      color: var(--text-soft);
-      line-height: 1.6;
+      line-height: 1.65;
+      color: var(--cyd-text-soft);
     }
     p {
       margin: 0;
     }
     code {
-      color: var(--accent-soft);
+      color: var(--cyd-primary-soft);
     }
-    .hero-stats,
-    .meta-grid,
-    .action-grid {
+    .mode,
+    .backup-mode {
       display: grid;
       gap: 12px;
+      margin: 24px 0 0;
     }
-    .hero-stats {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-    .stat {
-      background: var(--panel-soft);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 14px;
-      min-height: 92px;
-    }
-    .stat span {
-      display: block;
-      font-size: 0.85rem;
-      color: #97a4b8;
-      margin-bottom: 6px;
-    }
-    .stat strong {
-      display: block;
-      font-size: 1rem;
-      color: #fff;
-      word-break: break-word;
-    }
-    .stack {
-      display: grid;
-      gap: 18px;
-    }
-    .section-title {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin: 0 0 14px;
-      font-size: 1.05rem;
-    }
-    .mode-grid,
-    .meta-grid,
-    .tips,
-    .action-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .mode-grid,
-    .meta-grid,
-    .action-grid {
-      display: grid;
-      gap: 12px;
+    .backup-mode {
+      margin-top: 12px;
     }
     .option {
       display: flex;
       gap: 12px;
       align-items: flex-start;
-      padding: 16px;
-      border-radius: 16px;
-      border: 1px solid var(--border);
-      background: var(--panel-soft);
-      cursor: pointer;
-      transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
-    }
-    .option:hover {
-      border-color: rgba(147, 213, 255, 0.45);
-      transform: translateY(-1px);
+      padding: 14px 16px;
+      border-radius: 12px;
+      border: 1px solid var(--cyd-border);
+      background: rgba(255, 255, 255, 0.02);
     }
     .option input {
-      margin-top: 3px;
-      accent-color: var(--accent);
+      margin-top: 4px;
+      accent-color: var(--cyd-primary);
     }
     .option strong {
       display: block;
       margin-bottom: 4px;
       color: #fff;
-      font-size: 1rem;
     }
     .option:has(input:checked) {
-      border-color: var(--accent-soft);
+      border-color: var(--cyd-primary-soft);
       background: rgba(92, 184, 255, 0.1);
-      box-shadow: inset 0 0 0 1px rgba(147, 213, 255, 0.24);
+      box-shadow: inset 0 0 0 1px rgba(142, 209, 255, 0.24);
     }
     .option.disabled {
       opacity: 0.58;
-      cursor: not-allowed;
     }
     .summary,
-    .toggle-panel,
-    .release-panel,
+    .mirror-panel,
     .backup-panel,
-    .log-panel,
-    .tip-card {
-      padding: 16px;
-      border-radius: 16px;
-      border: 1px solid var(--border);
-      background: var(--panel-soft);
+    .meta,
+    .log-panel {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border-radius: 12px;
+      border: 1px solid var(--cyd-border);
+      background: rgba(255, 255, 255, 0.02);
     }
     .summary {
       background: rgba(92, 184, 255, 0.12);
-      border-color: rgba(147, 213, 255, 0.3);
-      color: #e4f4ff;
+      border: 1px solid rgba(142, 209, 255, 0.35);
+      color: #dbeafe;
     }
-    .summary strong {
-      color: #fff;
-    }
-    .toggle-panel label {
+    .mirror-panel label {
       display: flex;
-      gap: 12px;
+      gap: 10px;
       align-items: flex-start;
       cursor: pointer;
+      color: #fff;
+      font-weight: 600;
     }
-    .toggle-panel input {
+    .mirror-panel input {
+      margin-top: 3px;
+      accent-color: var(--cyd-primary);
+    }
+    .mirror-panel small {
+      display: block;
       margin-top: 4px;
-      accent-color: var(--accent);
+      color: var(--cyd-text-soft);
+      font-weight: 400;
+      line-height: 1.5;
     }
-    .release-panel.error,
+    .release-note {
+      margin: 12px 0 0;
+      color: var(--cyd-primary-soft);
+      font-size: 0.95rem;
+    }
+    .release-note.error,
     .backup-status.error {
-      color: var(--error);
-      border-color: rgba(255, 158, 158, 0.35);
-      background: rgba(255, 96, 96, 0.08);
+      color: var(--cyd-error);
     }
-    .release-panel {
+    .meta {
       display: grid;
       gap: 8px;
-      color: var(--accent-soft);
     }
-    .release-panel strong {
-      color: #fff;
+    .meta p {
+      margin: 0;
     }
-    .action-grid {
-      align-items: start;
+    .actions {
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
     }
-    button,
-    .button-link {
+    button {
       appearance: none;
-      border: 1px solid rgba(147, 213, 255, 0.42);
-      border-radius: 12px;
-      padding: 13px 18px;
-      font-size: 0.98rem;
+      border: 1px solid var(--cyd-primary-soft);
+      border-radius: 10px;
+      padding: 14px 22px;
+      font-size: 1rem;
       font-weight: 700;
       color: #fff;
-      background: linear-gradient(180deg, #202734 0%, #1a202a 100%);
+      background: var(--cyd-panel);
       cursor: pointer;
       box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
-      transition: border-color 0.18s ease, transform 0.18s ease, background-color 0.18s ease;
-      text-align: center;
-      text-decoration: none;
-      width: 100%;
+      transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
     }
-    button:hover,
-    .button-link:hover {
-      border-color: var(--accent);
-      transform: translateY(-1px);
+    button:hover {
       background: rgba(92, 184, 255, 0.14);
+      border-color: var(--cyd-primary);
+    }
+    button:active {
+      background: var(--cyd-primary);
+      border-color: var(--cyd-primary-soft);
     }
     button:disabled {
       cursor: not-allowed;
-      opacity: 0.62;
-      transform: none;
-      background: #1a1d24;
-      border-color: #4b5563;
+      color: #c7c7c7;
+      background: #1a1a1a;
+      border-color: #555;
+      box-shadow: none;
     }
     esp-web-install-button {
       display: block;
-      width: 100%;
     }
     esp-web-install-button::part(unsupported) {
       width: 100%;
     }
-    .button-row {
-      display: grid;
-      gap: 12px;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      align-items: stretch;
+    .hint {
+      margin-top: 12px;
+      font-size: 0.95rem;
+      color: #9ca3af;
     }
-    .button-group {
-      display: grid;
-      gap: 12px;
-    }
-    .backup-panel {
-      display: grid;
-      gap: 12px;
+    .backup-panel strong {
+      color: #fff;
     }
     .backup-status {
-      color: var(--text-soft);
+      margin-top: 10px;
       min-height: 1.4rem;
     }
     .progress {
       width: 100%;
-      height: 11px;
-      accent-color: var(--accent);
+      margin-top: 12px;
+      height: 10px;
+      accent-color: var(--cyd-primary);
     }
-    .meta-grid .stat {
-      min-height: 108px;
+    .log-panel {
+      margin-top: 18px;
     }
-    .tips {
-      display: grid;
-      gap: 12px;
-    }
-    ul {
-      margin: 0;
-      padding-left: 20px;
-    }
-    .log-toolbar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
-    }
-    .toolbar-actions {
-      display: flex;
-      gap: 10px;
-    }
-    .toolbar-actions button {
-      width: auto;
-      min-width: 110px;
-      padding: 10px 14px;
-      font-size: 0.92rem;
+    .log-panel h2 {
+      margin-top: 0;
     }
     #log-window {
       margin: 0;
-      min-height: 240px;
-      max-height: 340px;
+      min-height: 160px;
+      max-height: 260px;
       overflow: auto;
       padding: 14px;
-      border-radius: 14px;
-      border: 1px solid #252b37;
-      background: #0d1117;
+      border-radius: 10px;
+      border: 1px solid #252525;
+      background: #0f0f0f;
       color: #d8e6f7;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 0.84rem;
@@ -329,168 +225,96 @@
       white-space: pre-wrap;
       word-break: break-word;
     }
-    .hint {
-      font-size: 0.92rem;
-      color: #97a4b8;
-    }
-    @media (max-width: 860px) {
-      .hero,
-      .hero-stats,
-      .mode-grid,
-      .meta-grid,
-      .action-grid,
-      .button-row,
-      .tips {
-        grid-template-columns: 1fr;
-      }
-    }
   </style>
 </head>
 <body>
   <main>
-    <div class="shell">
-      <section class="card hero">
-        <div class="hero-copy">
-          <span class="eyebrow">CYDnote Web Flasher</span>
-          <h1>Flash or back up your CYD in one page.</h1>
-          <p>
-            Built for <code>ESP32-2432S028 / ESP32-2432S028R (CYD)</code>. Use Chrome or Edge with Web Serial,
-            then connect the board over USB.
-          </p>
-        </div>
-        <div class="hero-stats">
-          <div class="stat">
-            <span>Board</span>
-            <strong>ESP32 CYD 2.8&quot;</strong>
-          </div>
-          <div class="stat">
-            <span>Data partition</span>
-            <strong id="partition-size">0x0E0000 bytes</strong>
-          </div>
-          <div class="stat">
-            <span>Current mode</span>
-            <strong id="current-mode-stat">Safe update</strong>
-          </div>
-        </div>
-      </section>
+    <div class="card">
+      <h1>CYDnote 在线刷机</h1>
+      <p>适用于 <code>ESP32-2432S028/ESP32-2432S028R (CYD)</code>。请使用支持 Web Serial 的 Chrome / Edge，并通过 USB 连接设备。</p>
 
-      <section class="card stack">
-        <div>
-          <h2 class="section-title">Choose a flash mode</h2>
-          <div class="mode-grid">
-            <label class="option">
-              <input type="radio" name="flash-mode" value="preserve" checked>
-              <span>
-                <strong>Safe update</strong>
-                Update the bootloader, partitions, and app only. LittleFS data is kept.
-              </span>
-            </label>
-            <label class="option">
-              <input type="radio" name="flash-mode" value="erase">
-              <span>
-                <strong>Factory restore</strong>
-                Also flash the LittleFS image. This overwrites local device data.
-              </span>
-            </label>
-          </div>
-        </div>
+      <div class="mode">
+        <label class="option">
+          <input type="radio" name="flash-mode" value="preserve" checked>
+          <span>
+            <strong>保留数据更新</strong>
+            仅更新引导、分区表和应用固件，不覆盖 LittleFS 数据分区，适合日常升级。
+          </span>
+        </label>
+        <label class="option">
+          <input type="radio" name="flash-mode" value="erase">
+          <span>
+            <strong>全量覆盖恢复</strong>
+            同时写入 LittleFS 镜像，会覆盖设备上的本地数据，适合首次初始化或恢复出厂状态。
+          </span>
+        </label>
+      </div>
 
-        <div class="summary" id="mode-summary">
-          <strong>Safe update selected.</strong> The LittleFS partition at <code>0x310000</code> is not overwritten.
-        </div>
+      <div class="summary" id="mode-summary">当前模式：保留数据更新，不覆盖 <code>0x310000</code> 的 LittleFS 分区。</div>
 
-        <div class="toggle-panel">
-          <label>
-            <input type="checkbox" id="ghproxy-toggle">
+      <div class="mirror-panel">
+        <label>
+          <input type="checkbox" id="ghproxy-toggle">
+          <span>
+            使用国内镜像 <code>ghproxy</code> 加速固件下载
+            <small>仅代理固件 bin 下载地址；Release 元数据仍从 GitHub API 读取。</small>
+          </span>
+        </label>
+      </div>
+
+      <p class="release-note" id="release-note">正在读取 GitHub Release 构建文件…</p>
+
+      <div class="meta">
+        <p>固件构建时间：<strong id="build-date">检查中…</strong></p>
+        <p>Release 记录时间：<strong id="release-date">检查中…</strong></p>
+        <p>Release 标签：<strong id="release-tag">latest</strong></p>
+      </div>
+
+      <div class="actions">
+        <esp-web-install-button id="installer" manifest="./manifest-preserve.json">
+          <button slot="activate" id="flash-button">连接设备并开始刷机</button>
+        </esp-web-install-button>
+      </div>
+
+      <div class="backup-panel">
+        <strong>设备备份</strong>
+        <div class="backup-mode">
+          <label class="option">
+            <input type="radio" name="backup-scope" value="littlefs" checked>
             <span>
-              <strong>Use ghproxy for firmware downloads</strong><br>
-              <small>Only binary download URLs are proxied. Release metadata is still read from the GitHub API.</small>
+              <strong>LittleFS 分区备份</strong>
+              读取 <code>0x310000</code> 开始的 LittleFS 分区，仅备份本地数据区。
+            </span>
+          </label>
+          <label class="option">
+            <input type="radio" name="backup-scope" value="full">
+            <span>
+              <strong>全量备份</strong>
+              从 <code>0x000000</code> 开始读取整颗 4MB Flash，包含引导、应用和数据分区。
             </span>
           </label>
         </div>
-
-        <div class="release-panel" id="release-note">
-          Loading GitHub release metadata…
+        <p class="hint" id="backup-summary">当前备份范围：LittleFS 分区。</p>
+        <div class="actions">
+          <button id="backup-button" type="button">开始备份</button>
         </div>
+        <progress class="progress" id="backup-progress" value="0" max="100" hidden></progress>
+        <div class="backup-status" id="backup-status">准备开始备份。</div>
+      </div>
 
-        <div class="meta-grid">
-          <div class="stat">
-            <span>Firmware build date</span>
-            <strong id="build-date">Checking firmware assets…</strong>
-          </div>
-          <div class="stat">
-            <span>Release record date</span>
-            <strong id="release-date">Checking release tag…</strong>
-          </div>
-          <div class="stat">
-            <span>Release tag</span>
-            <strong id="release-tag">latest</strong>
-          </div>
-          <div class="stat">
-            <span>Backup output</span>
-            <strong id="backup-size">LittleFS raw image</strong>
-          </div>
-        </div>
-      </section>
+      <div class="log-panel">
+        <h2>状态日志</h2>
+        <pre id="log-window" aria-live="polite">[等待] 页面初始化中…</pre>
+      </div>
 
-      <section class="card stack">
-        <h2 class="section-title">Actions</h2>
-        <div class="action-grid">
-          <div class="button-group">
-            <div class="button-row">
-              <esp-web-install-button id="installer" manifest="./manifest-preserve.json">
-                <button slot="activate" id="flash-button">Connect and flash</button>
-              </esp-web-install-button>
-              <button id="backup-button" type="button">Back up LittleFS</button>
-            </div>
-            <p class="hint">If auto-download mode fails, hold <code>BOOT</code>, tap <code>RESET</code>, and try again.</p>
-          </div>
-
-          <div class="backup-panel">
-            <strong>Backup connected device data</strong>
-            <p>
-              Read the LittleFS partition from the connected board and download it as a raw
-              <code>.bin</code> image.
-            </p>
-            <progress class="progress" id="backup-progress" value="0" max="100" hidden></progress>
-            <div class="backup-status" id="backup-status">Ready to create a LittleFS backup.</div>
-          </div>
-        </div>
-      </section>
-
-      <section class="card stack">
-        <h2 class="section-title">Notes</h2>
-        <div class="tips">
-          <div class="tip-card">
-            <ul>
-              <li>Safe update is the recommended option for normal upgrades.</li>
-              <li>Factory restore is only for first-time setup or full recovery.</li>
-              <li>The page reads firmware from the repository release tag <code>latest</code>.</li>
-            </ul>
-          </div>
-          <div class="tip-card">
-            <ul>
-              <li>The build date shown below comes from the firmware asset upload time, not only the release publish time.</li>
-              <li>If the GitHub API cannot be reached, the page falls back to safe update mode.</li>
-              <li>Backups are saved locally in your browser as a downloadable file.</li>
-            </ul>
-          </div>
-        </div>
-      </section>
-
-      <section class="card log-panel">
-        <div class="log-toolbar">
-          <div>
-            <h2 class="section-title" style="margin:0;">Log window</h2>
-            <p class="hint">Release checks, mode changes, and backup progress appear here.</p>
-          </div>
-          <div class="toolbar-actions">
-            <button id="copy-log-button" type="button">Copy log</button>
-            <button id="clear-log-button" type="button">Clear log</button>
-          </div>
-        </div>
-        <pre id="log-window" aria-live="polite">[waiting] CYDnote web flasher is starting…</pre>
-      </section>
+      <ul>
+        <li>若自动进入下载模式失败，请按住 <code>BOOT</code>，再点一次 <code>RESET</code> 后重试。</li>
+        <li>“保留数据更新”仅在分区表未变化时才适合保留既有数据。</li>
+        <li>页面会直接读取 GitHub Releases 中 <code>latest</code> 标签下的构建产物。</li>
+        <li>页面显示的构建时间来自固件资产的上传/更新时间，不只看 Release 记录时间。</li>
+        <li>备份文件会以原始 <code>.bin</code> 格式下载到本地浏览器。</li>
+      </ul>
+      <p class="hint">本页使用 ESP Web Tools；manifest 已按本仓库分区表配置，并直接指向 GitHub Release 产物。</p>
     </div>
   </main>
 
@@ -502,17 +326,27 @@
     const releaseApi = "https://api.github.com/repos/shiftz300/CYDnote/releases/tags/latest";
     const githubDownloadPrefix = "https://github.com/";
     const ghproxyPrefix = "https://ghproxy.com/";
-    const littleFs = {
-      offset: 0x310000,
-      size: 0x0E0000,
-    };
     const requiredByMode = {
       preserve: ["bootloader.bin", "partitions.bin", "firmware.bin"],
       erase: ["bootloader.bin", "partitions.bin", "firmware.bin", "littlefs.bin"],
     };
+    const backupTargets = {
+      littlefs: {
+        label: "LittleFS 分区",
+        offset: 0x310000,
+        size: 0x0E0000,
+        prefix: "cydnote-littlefs-backup",
+      },
+      full: {
+        label: "整机 Flash",
+        offset: 0x000000,
+        size: 0x400000,
+        prefix: "cydnote-full-backup",
+      },
+    };
     const summaryText = {
-      preserve: "<strong>Safe update selected.</strong> The LittleFS partition at <code>0x310000</code> is not overwritten.",
-      erase: "<strong>Factory restore selected.</strong> The LittleFS partition at <code>0x310000</code> will be rewritten and local data will be erased.",
+      preserve: "当前模式：保留数据更新，不覆盖 0x310000 的 LittleFS 分区。",
+      erase: "当前模式：全量覆盖恢复，会写入 0x310000 的 LittleFS 分区并清空现有数据。",
     };
 
     const installer = document.getElementById("installer");
@@ -520,49 +354,47 @@
     const backupButton = document.getElementById("backup-button");
     const summary = document.getElementById("mode-summary");
     const releaseNote = document.getElementById("release-note");
-    const radios = document.querySelectorAll("input[name='flash-mode']");
-    const eraseRadio = document.querySelector("input[value='erase']");
-    const eraseOption = eraseRadio.closest(".option");
-    const ghproxyToggle = document.getElementById("ghproxy-toggle");
     const buildDate = document.getElementById("build-date");
     const releaseDate = document.getElementById("release-date");
     const releaseTag = document.getElementById("release-tag");
-    const currentModeStat = document.getElementById("current-mode-stat");
-    const partitionSize = document.getElementById("partition-size");
-    const backupSize = document.getElementById("backup-size");
+    const ghproxyToggle = document.getElementById("ghproxy-toggle");
+    const eraseRadio = document.querySelector("input[value='erase']");
+    const eraseOption = eraseRadio.closest(".option");
+    const flashModeRadios = document.querySelectorAll("input[name='flash-mode']");
+    const backupScopeRadios = document.querySelectorAll("input[name='backup-scope']");
+    const backupSummary = document.getElementById("backup-summary");
     const backupProgress = document.getElementById("backup-progress");
     const backupStatus = document.getElementById("backup-status");
-    const clearLogButton = document.getElementById("clear-log-button");
-    const copyLogButton = document.getElementById("copy-log-button");
     const logWindow = document.getElementById("log-window");
 
     const serialSupported = typeof navigator !== "undefined" && "serial" in navigator;
-    const backupFilenamePrefix = "cydnote-littlefs-backup";
     let currentManifestUrl = null;
-    let releaseNoteBase = "Loading GitHub release metadata…";
-    let isInitializing = true;
+    let releaseNoteBase = "正在读取 GitHub Release 构建文件…";
     let backupInProgress = false;
+    let flashAvailable = false;
     let esptoolModulePromise = null;
-
-    partitionSize.textContent = `${toHex(littleFs.size)} bytes`;
-    backupSize.textContent = `${(littleFs.size / (1024 * 1024)).toFixed(2)} MB LittleFS image`;
-    if (!serialSupported) {
-      setBackupStatus("Web Serial is not available in this browser, so device backup is disabled.", true);
-      backupButton.disabled = true;
-    }
+    const pageLocale = document.documentElement.lang || navigator.language || undefined;
 
     function toHex(value) {
       return `0x${value.toString(16).toUpperCase().padStart(6, "0")}`;
     }
 
+    function formatSize(size) {
+      if (size >= 1024 * 1024) {
+        const mb = size / (1024 * 1024);
+        return `${Number.isInteger(mb) ? mb.toFixed(0) : mb.toFixed(2)} MB`;
+      }
+      return `${Math.round(size / 1024)} KB`;
+    }
+
     function formatTimestamp(value) {
       const date = value ? new Date(value) : null;
       if (!date || Number.isNaN(date.getTime())) {
-        return "Unknown";
+        return "未知";
       }
-      return date.toLocaleString("en-GB", {
+      return date.toLocaleString(pageLocale, {
         year: "numeric",
-        month: "short",
+        month: "2-digit",
         day: "2-digit",
         hour: "2-digit",
         minute: "2-digit",
@@ -574,14 +406,13 @@
 
     function formatErrorMessage(error, fallback) {
       if (error && typeof error.message === "string" && error.message.trim()) {
-        return `${fallback} (${error.message})`;
+        return `${fallback}（${error.message}）`;
       }
       return fallback;
     }
 
     function logLine(message, level = "info") {
-      if (!logWindow) return;
-      const stamp = new Date().toLocaleTimeString("en-GB", { hour12: false });
+      const stamp = new Date().toLocaleTimeString(pageLocale, { hour12: false });
       const next = `[${stamp}] [${level}] ${message}`;
       logWindow.textContent = `${logWindow.textContent.trimEnd()}\n${next}`.trim();
       logWindow.scrollTop = logWindow.scrollHeight;
@@ -611,12 +442,11 @@
 
     function updateReleaseNote(text, isError = false) {
       releaseNoteBase = text;
-      const mirrorEnabled = !!(ghproxyToggle && ghproxyToggle.checked);
-      releaseNote.innerHTML = mirrorEnabled
-        ? `${releaseNoteBase}<br><small>Firmware downloads will currently use ghproxy.</small>`
-        : releaseNoteBase;
+      releaseNote.textContent = ghproxyToggle.checked
+        ? `${text} 当前固件下载将通过 ghproxy 镜像。`
+        : text;
       releaseNote.classList.toggle("error", isError);
-      logLine(text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(), isError ? "error" : "info");
+      logLine(releaseNote.textContent, isError ? "error" : "info");
     }
 
     function setFlashButtonEnabled(enabled) {
@@ -626,14 +456,8 @@
     }
 
     function syncActionButtons() {
-      if (backupInProgress) {
-        backupButton.disabled = true;
-        setFlashButtonEnabled(false);
-        return;
-      }
-      if (serialSupported) {
-        backupButton.disabled = false;
-      }
+      setFlashButtonEnabled(flashAvailable && !backupInProgress);
+      backupButton.disabled = !serialSupported || backupInProgress;
     }
 
     function revokeManifestUrl() {
@@ -646,10 +470,21 @@
       return document.querySelector("input[name='flash-mode']:checked").value;
     }
 
+    function getSelectedBackupTarget() {
+      return backupTargets[document.querySelector("input[name='backup-scope']:checked").value];
+    }
+
+    function updateBackupSummary() {
+      const target = getSelectedBackupTarget();
+      backupSummary.textContent = `当前备份范围：${target.label}（起始 ${toHex(target.offset)}，大小 ${formatSize(target.size)}）。`;
+      backupButton.textContent = document.querySelector("input[name='backup-scope']:checked").value === "full" ? "开始全量备份" : "开始备份";
+      logLine(`备份范围已切换为${target.label}。`);
+    }
+
     async function updateMode(mode) {
       const response = await fetch(manifests[mode]);
       if (!response.ok) {
-        throw new Error(`Failed to load the manifest file: ${response.status} ${response.statusText}`);
+        throw new Error(`无法读取 manifest：${response.status} ${response.statusText}`);
       }
       const manifest = await response.json();
       if (ghproxyToggle.checked) {
@@ -666,23 +501,23 @@
       revokeManifestUrl();
       currentManifestUrl = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: "application/json" }));
       installer.setAttribute("manifest", currentManifestUrl);
-      summary.innerHTML = summaryText[mode];
-      currentModeStat.textContent = mode === "preserve" ? "Safe update" : "Factory restore";
-      logLine(`Flash mode changed to ${mode === "preserve" ? "Safe update" : "Factory restore"}.`);
+      summary.textContent = summaryText[mode];
+      logLine(`刷机模式已切换为${mode === "preserve" ? "保留数据更新" : "全量覆盖恢复"}。`);
     }
 
     function markEraseUnavailable() {
       eraseRadio.disabled = true;
       eraseOption.classList.add("disabled");
       if (eraseRadio.checked) {
-        const preserve = document.querySelector("input[value='preserve']");
-        preserve.checked = true;
+        const preserveRadio = document.querySelector("input[value='preserve']");
+        preserveRadio.checked = true;
         updateMode("preserve").catch((error) => {
-          updateReleaseNote(formatErrorMessage(error, "Failed to switch back to safe update mode"), true);
-          setFlashButtonEnabled(false);
+          updateReleaseNote(formatErrorMessage(error, "切回保留数据更新失败"), true);
+          flashAvailable = false;
+          syncActionButtons();
         });
       }
-      logLine("Factory restore was disabled because littlefs.bin is not available.", "warn");
+      logLine("由于缺少 littlefs.bin，已禁用全量覆盖恢复模式。", "warn");
     }
 
     function updateBuildMetadata(release) {
@@ -698,7 +533,7 @@
         ? new Date(Math.max(...assetTimes))
         : null;
 
-      buildDate.textContent = newestAssetDate ? formatTimestamp(newestAssetDate.toISOString()) : "Unknown";
+      buildDate.textContent = newestAssetDate ? formatTimestamp(newestAssetDate.toISOString()) : "未知";
       releaseDate.textContent = formatTimestamp(release.published_at || release.created_at);
       releaseTag.textContent = release.tag_name || "latest";
     }
@@ -717,31 +552,33 @@
         updateBuildMetadata(release);
 
         if (!preserveReady) {
-          updateReleaseNote("The latest release tag is missing the required base firmware files, so flashing is temporarily unavailable.", true);
-          setFlashButtonEnabled(false);
+          flashAvailable = false;
+          updateReleaseNote("latest release 缺少基础固件文件，暂时无法在线刷机。", true);
           markEraseUnavailable();
+          syncActionButtons();
           return;
         }
 
         const newestAsset = (release.assets || [])
           .filter((asset) => requiredByMode.preserve.includes(asset.name))
           .sort((left, right) => new Date(right.updated_at || right.created_at || 0) - new Date(left.updated_at || left.created_at || 0))[0];
-        const buildStamp = newestAsset ? formatTimestamp(newestAsset.updated_at || newestAsset.created_at) : "Unknown";
-        const releaseStamp = formatTimestamp(release.published_at || release.created_at);
+        const buildStamp = newestAsset ? formatTimestamp(newestAsset.updated_at || newestAsset.created_at) : "未知";
 
+        flashAvailable = true;
         if (eraseReady) {
-          updateReleaseNote(`Release <strong>${release.name || "Latest Build"}</strong> is ready. Firmware asset build date: <strong>${buildStamp}</strong>. Release record date: <strong>${releaseStamp}</strong>.`);
+          updateReleaseNote(`已读取 release：${release.name || "Latest Build"}。固件构建时间：${buildStamp}。`);
         } else {
-          updateReleaseNote(`Release <strong>${release.name || "Latest Build"}</strong> is ready, but <code>littlefs.bin</code> is missing. Safe update stays available and the build date is <strong>${buildStamp}</strong>.`, true);
+          updateReleaseNote(`已读取 release：${release.name || "Latest Build"}，但缺少 littlefs.bin，因此仅保留“保留数据更新”模式。`, true);
           markEraseUnavailable();
         }
-        setFlashButtonEnabled(true);
+        syncActionButtons();
       } catch (error) {
-        buildDate.textContent = "Unknown";
-        releaseDate.textContent = "Unknown";
-        updateReleaseNote(`Failed to load release metadata: ${error.message}. The page falls back to safe update mode only; flashing can still continue if the release assets are reachable.`, true);
-        setFlashButtonEnabled(true);
+        buildDate.textContent = "未知";
+        releaseDate.textContent = "未知";
+        flashAvailable = true;
+        updateReleaseNote(`读取 Release 元数据失败：${error.message}。页面将只保留基础刷机能力。`, true);
         markEraseUnavailable();
+        syncActionButtons();
       }
     }
 
@@ -752,16 +589,16 @@
       return esptoolModulePromise;
     }
 
-    function updateBackupProgress(doneBytes, totalBytes) {
+    function updateBackupProgress(target, doneBytes, totalBytes) {
       const percent = Math.min(100, Math.round((doneBytes / totalBytes) * 100));
       backupProgress.hidden = false;
       backupProgress.value = percent;
-      backupStatus.textContent = `Reading LittleFS backup… ${percent}% (${Math.round(doneBytes / 1024)} KB / ${Math.round(totalBytes / 1024)} KB)`;
+      backupStatus.textContent = `正在读取${target.label}… ${percent}%（${Math.round(doneBytes / 1024)} KB / ${Math.round(totalBytes / 1024)} KB）`;
     }
 
-    function downloadBackup(data) {
+    function downloadBackup(data, target) {
       const filenameDate = new Date().toISOString().replace(/[:.]/g, "-").replace("T", "-").replace("Z", "");
-      const fileName = `${backupFilenamePrefix}-${filenameDate}.bin`;
+      const fileName = `${target.prefix}-${filenameDate}.bin`;
       const blob = new Blob([data], { type: "application/octet-stream" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -777,11 +614,12 @@
     async function handleBackup() {
       if (!serialSupported || backupInProgress) return;
 
+      const target = getSelectedBackupTarget();
       backupInProgress = true;
       backupProgress.hidden = false;
       backupProgress.value = 0;
       syncActionButtons();
-      setBackupStatus(`Starting backup from ${toHex(littleFs.offset)} (${toHex(littleFs.size)} bytes)…`);
+      setBackupStatus(`开始备份${target.label}（${toHex(target.offset)}，${formatSize(target.size)}）…`);
 
       let transport = null;
       try {
@@ -795,21 +633,21 @@
         });
 
         const chip = await loader.main();
-        logLine(`Backup connection opened for ${chip}.`);
-        const data = await loader.readFlash(littleFs.offset, littleFs.size, (_packet, doneBytes, totalBytes) => {
-          updateBackupProgress(doneBytes, totalBytes);
+        logLine(`已连接设备：${chip}。`);
+        const data = await loader.readFlash(target.offset, target.size, (_packet, doneBytes, totalBytes) => {
+          updateBackupProgress(target, doneBytes, totalBytes);
         });
-        const fileName = downloadBackup(data);
+        const fileName = downloadBackup(data, target);
         backupProgress.value = 100;
-        setBackupStatus(`Backup complete. Saved ${fileName}.`);
+        setBackupStatus(`备份完成：${fileName}`);
       } catch (error) {
-        setBackupStatus(formatErrorMessage(error, "Backup failed"), true);
+        setBackupStatus(formatErrorMessage(error, `${target.label}备份失败`), true);
       } finally {
         if (transport) {
           try {
             await transport.disconnect();
           } catch (disconnectError) {
-            logLine(formatErrorMessage(disconnectError, "Backup transport disconnect reported an error"), "warn");
+            logLine(formatErrorMessage(disconnectError, "断开备份连接时出现提示"), "warn");
           }
         }
         backupInProgress = false;
@@ -817,67 +655,60 @@
       }
     }
 
-    radios.forEach((radio) => {
+    flashModeRadios.forEach((radio) => {
       radio.addEventListener("change", async () => {
         if (!radio.checked) return;
         try {
           setFlashButtonEnabled(false);
           await updateMode(radio.value);
-          setFlashButtonEnabled(true);
+          syncActionButtons();
         } catch (error) {
-          updateReleaseNote(formatErrorMessage(error, "Failed to switch the flash mode"), true);
-          setFlashButtonEnabled(false);
+          flashAvailable = false;
+          updateReleaseNote(formatErrorMessage(error, "切换刷机模式失败"), true);
+          syncActionButtons();
         }
       });
     });
 
+    backupScopeRadios.forEach((radio) => {
+      radio.addEventListener("change", () => {
+        if (radio.checked) updateBackupSummary();
+      });
+    });
+
     ghproxyToggle.addEventListener("change", async () => {
-      const activeMode = getSelectedMode();
       try {
         setFlashButtonEnabled(false);
-        await updateMode(activeMode);
-        setFlashButtonEnabled(true);
+        await updateMode(getSelectedMode());
+        syncActionButtons();
         updateReleaseNote(releaseNoteBase, releaseNote.classList.contains("error"));
       } catch (error) {
-        updateReleaseNote(formatErrorMessage(error, "Failed to toggle ghproxy"), true);
-        setFlashButtonEnabled(false);
+        flashAvailable = false;
+        updateReleaseNote(formatErrorMessage(error, "切换 ghproxy 失败"), true);
+        syncActionButtons();
       }
     });
 
     flashButton.addEventListener("click", () => {
-      logLine(`Flash flow opened in ${getSelectedMode() === "preserve" ? "Safe update" : "Factory restore"} mode.`);
+      logLine(`已打开刷机流程：${getSelectedMode() === "preserve" ? "保留数据更新" : "全量覆盖恢复"}。`);
     });
     backupButton.addEventListener("click", handleBackup);
-
-    clearLogButton.addEventListener("click", () => {
-      logWindow.textContent = "[cleared] Log window cleared.";
-    });
-
-    copyLogButton.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(logWindow.textContent);
-        logLine("Log copied to clipboard.");
-      } catch (error) {
-        logLine(formatErrorMessage(error, "Failed to copy the log"), "error");
-      }
-    });
 
     window.addEventListener("beforeunload", () => {
       revokeManifestUrl();
     });
 
-    setFlashButtonEnabled(false);
+    updateBackupSummary();
+    if (!serialSupported) {
+      setBackupStatus("当前浏览器不支持 Web Serial，无法使用备份功能。", true);
+    }
+    syncActionButtons();
     updateReleaseNote(releaseNoteBase);
-    Promise.all([updateMode("preserve"), loadReleaseInfo()])
-      .catch((error) => {
-        updateReleaseNote(formatErrorMessage(error, "Failed to initialize the flasher page"), true);
-        setFlashButtonEnabled(false);
-      })
-      .finally(() => {
-        isInitializing = false;
-        syncActionButtons();
-        logLine("Page initialization finished.");
-      });
+    Promise.all([updateMode("preserve"), loadReleaseInfo()]).catch((error) => {
+      flashAvailable = false;
+      updateReleaseNote(formatErrorMessage(error, "初始化刷机页面失败"), true);
+      syncActionButtons();
+    });
   </script>
 </body>
 </html>

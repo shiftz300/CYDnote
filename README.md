@@ -36,7 +36,7 @@ If you want Netlify to deploy directly from this repository, a root-level `netli
 - The page loads firmware binaries from the repository's `latest` release assets
 - No firmware build step is required inside Netlify
 - The page also offers an optional `ghproxy` mirror toggle for faster firmware downloads in mainland China
-- The page now includes a live log window, shows the firmware asset build date from release asset timestamps, and can back up the on-device LittleFS partition as a downloadable `.bin` file
+- The page keeps a simple log area, shows the firmware asset build date from release asset timestamps, and can back up either the on-device LittleFS partition or the full 4MB flash as a downloadable `.bin` file
 
 Notes:
 
@@ -48,6 +48,7 @@ Notes:
 - If the base firmware assets (`bootloader.bin`, `partitions.bin`, `firmware.bin`) are missing, the page blocks flashing entirely
 - If the browser cannot reach the GitHub API metadata endpoint, the page falls back to preserve-data mode only
 - The page shows the build date from the firmware asset upload/update time because the reusable `latest` release record date may be older than the current binaries
+- Device backup supports either the LittleFS data partition or a full raw 4MB flash dump
 - The current board configuration is classic `ESP32`, not an `ESP32-S3` OPI PSRAM target
 
 ## Warning
