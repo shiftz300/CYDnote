@@ -109,8 +109,8 @@ private:
         editor.setReadChunkMode(false);
         editor.setReadChunkNavigationState(false, false);
         uint64_t file_size = 0;
-        bool can_chunk = getVirtualFileSize(filename, file_size) && file_size > READ_CHUNK_SIZE;
-        if (can_chunk) {
+        bool should_use_chunk_mode = getVirtualFileSize(filename, file_size) && file_size > READ_CHUNK_SIZE;
+        if (should_use_chunk_mode) {
             read_chunk_file_size = file_size;
             read_chunk_offsets.push_back(0);
             read_chunk_index = 0;
