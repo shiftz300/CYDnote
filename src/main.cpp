@@ -37,10 +37,10 @@ XPT2046_Touchscreen touchscreen(XPT2046_CS);
 // - Smaller partial chunks reduce per-flush blocking.
 // - Optional double buffer improves overlap between render and flush.
 #ifndef LVGL_DRAW_BUF_DIV
-#define LVGL_DRAW_BUF_DIV 6
+#define LVGL_DRAW_BUF_DIV 2
 #endif
 #ifndef LVGL_DOUBLE_BUF
-#define LVGL_DOUBLE_BUF 1
+#define LVGL_DOUBLE_BUF 0
 #endif
 #define DRAW_BUF_PIXELS (SCREEN_WIDTH * SCREEN_HEIGHT / LVGL_DRAW_BUF_DIV)
 #define DRAW_BUF_SIZE (DRAW_BUF_PIXELS * (LV_COLOR_DEPTH / 8))

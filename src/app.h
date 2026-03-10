@@ -28,6 +28,7 @@ private:
     static constexpr size_t EDITOR_LAZYLOAD_WINDOW = 4 * 1024;
     static constexpr size_t EDITOR_LAZYLOAD_OVERLAP_DOWN = 96;
     static constexpr size_t EDITOR_LAZYLOAD_OVERLAP_UP = 0;
+    static constexpr size_t UTF8_CONTINUATION_TRIM_LIMIT = 3;
     struct LazyFileState {
         bool active;
         bool loading;
@@ -389,7 +390,7 @@ private:
             size_t trim_start = 0;
             const char* raw = out.c_str();
             if (start_offset > 0) {
-                while (trim_start < out.length() && trim_start < 3 && isUtf8ContinuationByte((uint8_t)raw[trim_start])) {
+                while (trim_start < out.length() && trim_start < UTF8_CONTINUATION_TRIM_LIMIT && isUtf8ContinuationByte((uint8_t)raw[trim_start])) {
                     trim_start++;
                 }
             }
