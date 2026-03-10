@@ -1338,25 +1338,24 @@ private:
         list_suspended_for_dialog = true;
     }
 
-    void exitRemoveModeIfNeeded(bool refresh_ui = false) {
-        if (!remove_mode) return;
-        remove_mode = false;
+    template <typename RefreshFn>
+    void exitModeIfNeeded(bool& mode, bool refresh_ui, RefreshFn refresh_fn) {
+        if (!mode) return;
+        mode = false;
         if (menu_panel) lv_obj_add_flag(menu_panel, LV_OBJ_FLAG_HIDDEN);
-        if (refresh_ui) refreshUi();
+        if (refresh_ui) refresh_fn();
+    }
+
+    void exitRemoveModeIfNeeded(bool refresh_ui = false) {
+        exitModeIfNeeded(remove_mode, refresh_ui, [this]() { refreshUi(); });
     }
 
     void exitCopyPickModeIfNeeded(bool refresh_ui = false) {
-        if (!copy_pick_mode) return;
-        copy_pick_mode = false;
-        if (menu_panel) lv_obj_add_flag(menu_panel, LV_OBJ_FLAG_HIDDEN);
-        if (refresh_ui) refreshSelectionHighlight();
+        exitModeIfNeeded(copy_pick_mode, refresh_ui, [this]() { refreshSelectionHighlight(); });
     }
 
     void exitMovePickModeIfNeeded(bool refresh_ui = false) {
-        if (!move_pick_mode) return;
-        move_pick_mode = false;
-        if (menu_panel) lv_obj_add_flag(menu_panel, LV_OBJ_FLAG_HIDDEN);
-        if (refresh_ui) refreshSelectionHighlight();
+        exitModeIfNeeded(move_pick_mode, refresh_ui, [this]() { refreshSelectionHighlight(); });
     }
 
     void goUp() {
@@ -1365,11 +1364,11 @@ private:
         current_path = (idx <= 0) ? "/" : current_path.substring(0, idx);
     }
 
-    // --- Dialog helper methods ---
-    lv_obj_t* makeDialogBox(int32_t width) {
+    lv_obj_t* makeDialogBox(int32_t width, bool plain_style = false) {
         lv_obj_t* box = lv_obj_create(screen);
         lv_obj_add_flag(box, LV_OBJ_FLAG_FLOATING);
         lv_obj_add_flag(box, LV_OBJ_FLAG_IGNORE_LAYOUT);
+        if (plain_style) lv_obj_remove_style_all(box);
         lv_obj_set_width(box, width);
         lv_obj_set_height(box, LV_SIZE_CONTENT);
         lv_obj_center(box);
@@ -1379,6 +1378,14 @@ private:
         lv_obj_set_style_pad_row(box, 4, 0);
         lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
         lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+        if (plain_style) {
+            lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
+            lv_obj_set_style_border_width(box, 1, 0);
+            lv_obj_set_style_radius(box, 6, 0);
+            lv_obj_set_style_clip_corner(box, true, 0);
+            lv_obj_set_style_shadow_width(box, 0, 0);
+            lv_obj_set_style_outline_width(box, 0, 0);
+        }
         return box;
     }
 
@@ -1424,29 +1431,6 @@ private:
         return makeDialogButton(row, label, w, 28, cb);
     }
 
-    lv_obj_t* makeInputDialogBox(int32_t width) {
-        lv_obj_t* box = lv_obj_create(screen);
-        lv_obj_add_flag(box, LV_OBJ_FLAG_FLOATING);
-        lv_obj_add_flag(box, LV_OBJ_FLAG_IGNORE_LAYOUT);
-        lv_obj_remove_style_all(box);
-        lv_obj_set_width(box, width);
-        lv_obj_set_height(box, LV_SIZE_CONTENT);
-        lv_obj_center(box);
-        lv_obj_set_style_bg_color(box, lv_color_hex(0x000000), 0);
-        lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_color(box, lv_color_hex(0x505050), 0);
-        lv_obj_set_style_border_width(box, 1, 0);
-        lv_obj_set_style_radius(box, 6, 0);
-        lv_obj_set_style_clip_corner(box, true, 0);
-        lv_obj_set_style_shadow_width(box, 0, 0);
-        lv_obj_set_style_outline_width(box, 0, 0);
-        lv_obj_set_style_pad_all(box, 6, 0);
-        lv_obj_set_style_pad_row(box, 4, 0);
-        lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
-        lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
-        return box;
-    }
-
     lv_obj_t* addDialogInfoText(lv_obj_t* box, const char* text, const lv_font_t* font) {
         return addDialogWrapText(box, text, font, lv_color_hex(0xD0E6FF));
     }
@@ -1472,7 +1456,7 @@ private:
         suspendListForDialog();
         dialog_mode = mode;
 
-        dialog_box = makeInputDialogBox(186);
+        dialog_box = makeDialogBox(186, true);
 
         addDialogWrapText(dialog_box, title, FontManager::textFont(), lv_color_hex(0xFFFFFF));
 

@@ -211,37 +211,8 @@ public:
         ime_cursor_anchor_pos = lv_textarea_get_cursor_pos(textarea);
         ime_cursor_anchor_valid = true;
 
-        read_prev_btn = lv_btn_create(screen);
-        lv_obj_add_flag(read_prev_btn, LV_OBJ_FLAG_FLOATING);
-        lv_obj_add_flag(read_prev_btn, LV_OBJ_FLAG_IGNORE_LAYOUT);
-        lv_obj_set_size(read_prev_btn, CHUNK_NAV_BTN_SIZE, CHUNK_NAV_BTN_SIZE);
-        styleActionButton(read_prev_btn);
-        lv_obj_set_style_bg_opa(read_prev_btn, CHUNK_NAV_BTN_BG_OPA, LV_STATE_DEFAULT);
-        lv_obj_align(read_prev_btn, LV_ALIGN_TOP_RIGHT, -6, 42);
-        lv_obj_add_event_cb(read_prev_btn, read_prev_btn_event_cb, LV_EVENT_CLICKED, this);
-        lv_obj_t* prev_label = lv_label_create(read_prev_btn);
-        lv_label_set_text(prev_label, LV_SYMBOL_LEFT);
-        lv_obj_set_style_text_font(prev_label, FontManager::iconFont(), 0);
-        lv_obj_set_style_text_color(prev_label, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_center(prev_label);
-        lv_obj_move_foreground(read_prev_btn);
-        lv_obj_add_flag(read_prev_btn, LV_OBJ_FLAG_HIDDEN);
-
-        read_next_btn = lv_btn_create(screen);
-        lv_obj_add_flag(read_next_btn, LV_OBJ_FLAG_FLOATING);
-        lv_obj_add_flag(read_next_btn, LV_OBJ_FLAG_IGNORE_LAYOUT);
-        lv_obj_set_size(read_next_btn, CHUNK_NAV_BTN_SIZE, CHUNK_NAV_BTN_SIZE);
-        styleActionButton(read_next_btn);
-        lv_obj_set_style_bg_opa(read_next_btn, CHUNK_NAV_BTN_BG_OPA, LV_STATE_DEFAULT);
-        lv_obj_align(read_next_btn, LV_ALIGN_BOTTOM_RIGHT, -6, -6);
-        lv_obj_add_event_cb(read_next_btn, read_next_btn_event_cb, LV_EVENT_CLICKED, this);
-        lv_obj_t* next_label = lv_label_create(read_next_btn);
-        lv_label_set_text(next_label, LV_SYMBOL_RIGHT);
-        lv_obj_set_style_text_font(next_label, FontManager::iconFont(), 0);
-        lv_obj_set_style_text_color(next_label, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_center(next_label);
-        lv_obj_move_foreground(read_next_btn);
-        lv_obj_add_flag(read_next_btn, LV_OBJ_FLAG_HIDDEN);
+        read_prev_btn = createReadChunkNavButton(LV_ALIGN_TOP_RIGHT, -6, 42, LV_SYMBOL_LEFT, read_prev_btn_event_cb);
+        read_next_btn = createReadChunkNavButton(LV_ALIGN_BOTTOM_RIGHT, -6, -6, LV_SYMBOL_RIGHT, read_next_btn_event_cb);
 
         ime_container = lv_obj_create(screen);
         lv_obj_set_width(ime_container, lv_pct(100));
@@ -513,6 +484,25 @@ private:
         lv_obj_set_style_border_color(btn, lv_color_hex(0x8ED1FF), LV_STATE_FOCUSED);
         lv_obj_set_style_text_color(btn, lv_color_hex(0xFFFFFF), 0);
         lv_obj_set_style_shadow_width(btn, 0, 0);
+    }
+
+    lv_obj_t* createReadChunkNavButton(lv_align_t align, int32_t x_ofs, int32_t y_ofs, const char* symbol, lv_event_cb_t cb) {
+        lv_obj_t* btn = lv_btn_create(screen);
+        lv_obj_add_flag(btn, LV_OBJ_FLAG_FLOATING);
+        lv_obj_add_flag(btn, LV_OBJ_FLAG_IGNORE_LAYOUT);
+        lv_obj_set_size(btn, CHUNK_NAV_BTN_SIZE, CHUNK_NAV_BTN_SIZE);
+        styleActionButton(btn);
+        lv_obj_set_style_bg_opa(btn, CHUNK_NAV_BTN_BG_OPA, LV_STATE_DEFAULT);
+        lv_obj_align(btn, align, x_ofs, y_ofs);
+        lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, this);
+        lv_obj_t* label = lv_label_create(btn);
+        lv_label_set_text(label, symbol);
+        lv_obj_set_style_text_font(label, FontManager::iconFont(), 0);
+        lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_center(label);
+        lv_obj_move_foreground(btn);
+        lv_obj_add_flag(btn, LV_OBJ_FLAG_HIDDEN);
+        return btn;
     }
 
     void refreshReadChunkButtons() {
