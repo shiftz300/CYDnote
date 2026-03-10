@@ -39,7 +39,23 @@ jobs:
       - name: Build LittleFS image
         run: pio run -e "$PIO_ENV" -t buildfs
 
+      - name: Verify webflash artifacts
+        run: |
+          REQUIRED=(
+            ".pio/build/$PIO_ENV/bootloader.bin"
+            ".pio/build/$PIO_ENV/partitions.bin"
+            ".pio/build/$PIO_ENV/firmware.bin"
+            ".pio/build/$PIO_ENV/littlefs.bin"
+          )
+          for file in "${REQUIRED[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "Missing required artifact: $file"
+              exit 1
+            fi
+          done
+
       - name: Upload firmware to Release
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
