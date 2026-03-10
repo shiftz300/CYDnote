@@ -480,6 +480,7 @@ private:
     void applyLargeDocPerfMode(size_t content_len) {
         if (!textarea) return;
         bool want_large_mode = content_len >= LARGE_DOC_PERF_THRESHOLD;
+        if (want_large_mode == large_doc_mode) return;
         large_doc_mode = want_large_mode;
 
         // Large doc: reduce expensive cursor hit-test/update path during scroll.
@@ -673,8 +674,8 @@ private:
         Editor* ed = (Editor*)user_data;
         if (!ed || !ed->textarea) return;
         lv_obj_update_layout(ed->textarea);
-        int32_t y = lv_obj_get_scroll_bottom(ed->textarea);
-        lv_obj_scroll_by(ed->textarea, 0, y, LV_ANIM_OFF);
+        int32_t bottom_offset = lv_obj_get_scroll_bottom(ed->textarea);
+        lv_obj_scroll_by(ed->textarea, 0, bottom_offset, LV_ANIM_OFF);
         ed->refreshReadChunkButtons();
     }
 
@@ -689,7 +690,8 @@ private:
 
     void moveCursorAndViewToEnd() {
         if (!textarea) return;
-        uint32_t len = lv_textarea_get_text(textarea) ? (uint32_t)strlen(lv_textarea_get_text(textarea)) : 0;
+        const char* text = lv_textarea_get_text(textarea);
+        uint32_t len = text ? (uint32_t)strlen(text) : 0;
         lv_textarea_set_cursor_pos(textarea, (int32_t)len);
         ime_cursor_anchor_pos = len;
         ime_cursor_anchor_valid = true;

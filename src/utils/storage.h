@@ -96,7 +96,7 @@ public:
             int n = file.read(buf, CHUNK);
             if (n <= 0) break;
             buf[n] = '\0';
-            if (!content.concat(buf, (unsigned int)n)) {
+            if (!content.concat(buf, static_cast<unsigned int>(n))) {
                 file.close();
                 return false;
             }
@@ -141,7 +141,7 @@ public:
             int n = file.read(buf, want);
             if (n <= 0) break;
             buf[n] = '\0';
-            if (!content.concat(buf, (unsigned int)n)) {
+            if (!content.concat(buf, static_cast<unsigned int>(n))) {
                 file.close();
                 return false;
             }

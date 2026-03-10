@@ -23,6 +23,7 @@ private:
     static constexpr size_t IMAGE_GALLERY_SCAN_ENTRY_LIMIT = 80;
     static constexpr size_t IMAGE_GALLERY_SCAN_IMAGE_LIMIT = 64;
     static constexpr size_t READ_CHUNK_SIZE = 1536;
+    static constexpr size_t MAX_UTF8_CONTINUATION_BYTES = 3;
     AppMode current_mode;
     FileManager file_manager;
     Editor editor;
@@ -268,8 +269,10 @@ private:
     void showNextReadChunk() {
         if (!editor.isReadChunkMode()) return;
         if (read_chunk_offsets.empty()) return;
-        size_t next_offset = read_chunk_offsets[read_chunk_index] + read_chunk_bytes;
-        if ((uint64_t)next_offset >= read_chunk_file_size || read_chunk_bytes == 0) return;
+        if (read_chunk_index >= read_chunk_offsets.size()) return;
+        uint64_t next_offset64 = (uint64_t)read_chunk_offsets[read_chunk_index] + (uint64_t)read_chunk_bytes;
+        if (next_offset64 > (uint64_t)SIZE_MAX || next_offset64 >= read_chunk_file_size || read_chunk_bytes == 0) return;
+        size_t next_offset = (size_t)next_offset64;
         if (read_chunk_index + 1 < read_chunk_offsets.size()) {
             read_chunk_index++;
             loadReadChunkAtIndex(false);
@@ -301,14 +304,16 @@ private:
         return true;
     }
 
+    // Return the expected UTF-8 codepoint width from a lead byte, or 0 if the lead byte is invalid.
     size_t utf8CodepointBytes(uint8_t lead) const {
         if ((lead & 0x80U) == 0) return 1;
-        if ((lead & 0xE0U) == 0xC0U) return 2;
+        if (lead >= 0xC2U && lead <= 0xDFU) return 2;
         if ((lead & 0xF0U) == 0xE0U) return 3;
-        if ((lead & 0xF8U) == 0xF0U) return 4;
-        return 1;
+        if (lead >= 0xF0U && lead <= 0xF4U) return 4;
+        return 0;
     }
 
+    // Remove any incomplete UTF-8 sequence at the end of a chunk and keep bytes_read in sync with the trimmed content.
     void trimIncompleteUtf8Tail(String& content, size_t& bytes_read, bool has_more) {
         if (!has_more || bytes_read == 0) return;
         const char* data = content.c_str();
@@ -316,7 +321,7 @@ private:
 
         size_t end = bytes_read;
         size_t cont_bytes = 0;
-        while (cont_bytes < end && cont_bytes < 3) {
+        while (cont_bytes < end && cont_bytes < MAX_UTF8_CONTINUATION_BYTES) {
             uint8_t c = (uint8_t)data[end - 1 - cont_bytes];
             if ((c & 0xC0U) != 0x80U) break;
             cont_bytes++;
@@ -324,11 +329,13 @@ private:
 
         if (cont_bytes == 0) {
             size_t expected = utf8CodepointBytes((uint8_t)data[end - 1]);
-            if (expected > 1) end--;
+            // Trim a lone multibyte lead byte that landed at the chunk boundary.
+            if (expected > 1 && end > 0) end--;
         } else if (cont_bytes < end) {
             size_t lead_index = end - 1 - cont_bytes;
             size_t expected = utf8CodepointBytes((uint8_t)data[lead_index]);
-            if (expected != (cont_bytes + 1)) end = lead_index;
+            // Trim incomplete or invalid UTF-8 tail bytes before switching chunks.
+            if (expected == 0 || expected != (cont_bytes + 1)) end = lead_index;
         } else {
             end = 0;
         }
@@ -354,7 +361,7 @@ private:
                 int n = f.read((uint8_t*)buf, CHUNK);
                 if (n <= 0) break;
                 buf[n] = '\0';
-                if (!out.concat(buf, (unsigned int)n)) {
+                if (!out.concat(buf, static_cast<unsigned int>(n))) {
                     f.close();
                     return false;
                 }
@@ -396,7 +403,7 @@ private:
                 int n = f.read((uint8_t*)buf, want);
                 if (n <= 0) break;
                 buf[n] = '\0';
-                if (!out.concat(buf, (unsigned int)n)) {
+                if (!out.concat(buf, static_cast<unsigned int>(n))) {
                     f.close();
                     return false;
                 }
