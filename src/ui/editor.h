@@ -357,6 +357,7 @@ public:
     }
 
     void toggleIME() {
+        if (read_chunk_mode) return;
         setIMEVisible(!ime_visible);
     }
 
@@ -379,14 +380,6 @@ public:
             lv_textarea_set_cursor_click_pos(textarea, interactive);
             lv_textarea_set_text_selection(textarea, interactive);
             lv_obj_set_style_bg_opa(textarea, read_chunk_mode ? LV_OPA_TRANSP : LV_OPA_70, LV_PART_CURSOR);
-        }
-        if (ime_btn) {
-            if (read_chunk_mode) lv_obj_add_flag(ime_btn, LV_OBJ_FLAG_HIDDEN);
-            else lv_obj_clear_flag(ime_btn, LV_OBJ_FLAG_HIDDEN);
-        }
-        if (save_btn) {
-            if (read_chunk_mode) lv_obj_add_flag(save_btn, LV_OBJ_FLAG_HIDDEN);
-            else lv_obj_clear_flag(save_btn, LV_OBJ_FLAG_HIDDEN);
         }
         if (read_chunk_mode && ime_visible) setIMEVisible(false);
         refreshReadChunkButtons();
