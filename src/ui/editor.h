@@ -22,6 +22,7 @@ private:
     static constexpr size_t LARGE_DOC_PERF_THRESHOLD = 2 * 1024;
     static constexpr int32_t CHUNK_NAV_BTN_SIZE = 24;
     static constexpr int32_t CHUNK_NAV_EDGE_THRESHOLD = 6;
+    static constexpr lv_opa_t CHUNK_NAV_BTN_BG_OPA = static_cast<lv_opa_t>((LV_OPA_COVER * 75) / 100);
     lv_obj_t* screen;
     lv_obj_t* textarea;
     lv_obj_t* ime;
@@ -215,7 +216,7 @@ public:
         lv_obj_add_flag(read_prev_btn, LV_OBJ_FLAG_IGNORE_LAYOUT);
         lv_obj_set_size(read_prev_btn, CHUNK_NAV_BTN_SIZE, CHUNK_NAV_BTN_SIZE);
         styleActionButton(read_prev_btn);
-        lv_obj_set_style_bg_opa(read_prev_btn, LV_OPA_75, LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_opa(read_prev_btn, CHUNK_NAV_BTN_BG_OPA, LV_STATE_DEFAULT);
         lv_obj_align(read_prev_btn, LV_ALIGN_TOP_RIGHT, -6, 42);
         lv_obj_add_event_cb(read_prev_btn, read_prev_btn_event_cb, LV_EVENT_CLICKED, this);
         lv_obj_t* prev_label = lv_label_create(read_prev_btn);
@@ -231,7 +232,7 @@ public:
         lv_obj_add_flag(read_next_btn, LV_OBJ_FLAG_IGNORE_LAYOUT);
         lv_obj_set_size(read_next_btn, CHUNK_NAV_BTN_SIZE, CHUNK_NAV_BTN_SIZE);
         styleActionButton(read_next_btn);
-        lv_obj_set_style_bg_opa(read_next_btn, LV_OPA_75, LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_opa(read_next_btn, CHUNK_NAV_BTN_BG_OPA, LV_STATE_DEFAULT);
         lv_obj_align(read_next_btn, LV_ALIGN_BOTTOM_RIGHT, -6, -6);
         lv_obj_add_event_cb(read_next_btn, read_next_btn_event_cb, LV_EVENT_CLICKED, this);
         lv_obj_t* next_label = lv_label_create(read_next_btn);
