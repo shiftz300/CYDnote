@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en-US">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CYDnote 在线刷机 / Web Flasher</title>
+  <title>CYDnote Web Flasher</title>
   <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
   <style>
     :root {
@@ -230,91 +230,91 @@
 <body>
   <main>
     <div class="card">
-      <h1>CYDnote 在线刷机</h1>
-      <p>适用于 <code>ESP32-2432S028/ESP32-2432S028R (CYD)</code>。请使用支持 Web Serial 的 Chrome / Edge，并通过 USB 连接设备。</p>
+      <h1>CYDnote Web Flasher</h1>
+      <p>For <code>ESP32-2432S028/ESP32-2432S028R (CYD)</code>. Use Chrome/Edge with Web Serial support and connect your device by USB.</p>
 
       <div class="mode">
         <label class="option">
           <input type="radio" name="flash-mode" value="preserve" checked>
           <span>
-            <strong>保留数据更新</strong>
-            仅更新引导、分区表和应用固件，不覆盖 LittleFS 数据分区，适合日常升级。
+            <strong>Preserve Data Update</strong>
+            Updates bootloader, partitions, and firmware only. Keeps LittleFS data unchanged.
           </span>
         </label>
         <label class="option">
           <input type="radio" name="flash-mode" value="erase">
           <span>
-            <strong>全量覆盖恢复</strong>
-            同时写入 LittleFS 镜像，会覆盖设备上的本地数据，适合首次初始化或恢复出厂状态。
+            <strong>Full Restore</strong>
+            Also writes LittleFS image and overwrites local device data.
           </span>
         </label>
       </div>
 
-      <div class="summary" id="mode-summary">当前模式：保留数据更新，不覆盖 <code>0x310000</code> 的 LittleFS 分区。</div>
+      <div class="summary" id="mode-summary">Current mode: Preserve Data Update. LittleFS at <code>0x310000</code> will not be overwritten.</div>
 
       <div class="mirror-panel">
         <label>
           <input type="checkbox" id="ghproxy-toggle">
-          <span>
-            使用国内镜像 <code>ghproxy</code> 加速固件下载
-            <small>仅代理固件 bin 下载地址；Release 元数据仍从 GitHub API 读取。</small>
-          </span>
+            <span>
+              Use <code>ghproxy</code> mirror for faster firmware downloads
+              <small>If direct GitHub API access fails, this page will automatically fetch release metadata through <code>github.akams.cn</code>.</small>
+            </span>
         </label>
       </div>
 
-      <p class="release-note" id="release-note">正在读取 GitHub Release 构建文件…</p>
+      <p class="release-note" id="release-note">Loading GitHub release assets…</p>
 
       <div class="meta">
-        <p>固件构建时间：<strong id="build-date">检查中…</strong></p>
-        <p>Release 记录时间：<strong id="release-date">检查中…</strong></p>
-        <p>Release 标签：<strong id="release-tag">latest</strong></p>
+        <p>Firmware build time: <strong id="build-date">Checking…</strong></p>
+        <p>Release publish time: <strong id="release-date">Checking…</strong></p>
+        <p>Release tag: <strong id="release-tag">latest</strong></p>
       </div>
 
       <div class="actions">
         <esp-web-install-button id="installer" manifest="./manifest-preserve.json">
-          <button slot="activate" id="flash-button">连接设备并开始刷机</button>
+          <button slot="activate" id="flash-button">Connect Device and Flash</button>
         </esp-web-install-button>
       </div>
 
       <div class="backup-panel">
-        <strong>设备备份</strong>
+        <strong>Device Backup</strong>
         <div class="backup-mode">
           <label class="option">
             <input type="radio" name="backup-scope" value="littlefs" checked>
             <span>
-              <strong>LittleFS 分区备份</strong>
-              读取 <code>0x310000</code> 开始的 LittleFS 分区，仅备份本地数据区。
+              <strong>LittleFS Backup</strong>
+              Reads the LittleFS partition from <code>0x310000</code> and backs up user data only.
             </span>
           </label>
           <label class="option">
             <input type="radio" name="backup-scope" value="full">
             <span>
-              <strong>全量备份</strong>
-              从 <code>0x000000</code> 开始读取整颗 4MB Flash，包含引导、应用和数据分区。
+              <strong>Full Flash Backup</strong>
+              Reads the full 4MB flash from <code>0x000000</code> (bootloader, app, and data).
             </span>
           </label>
         </div>
-        <p class="hint" id="backup-summary">当前备份范围：LittleFS 分区。</p>
+        <p class="hint" id="backup-summary">Current backup range: LittleFS.</p>
         <div class="actions">
-          <button id="backup-button" type="button">开始备份</button>
+          <button id="backup-button" type="button">Start Backup</button>
         </div>
         <progress class="progress" id="backup-progress" value="0" max="100" hidden></progress>
-        <div class="backup-status" id="backup-status">准备开始备份。</div>
+        <div class="backup-status" id="backup-status">Ready to back up.</div>
       </div>
 
       <div class="log-panel">
-        <h2>状态日志</h2>
-        <pre id="log-window" aria-live="polite">[等待] 页面初始化中…</pre>
+        <h2>Status Log</h2>
+        <pre id="log-window" aria-live="polite">[WAIT] Initializing page…</pre>
       </div>
 
       <ul>
-        <li>若自动进入下载模式失败，请按住 <code>BOOT</code>，再点一次 <code>RESET</code> 后重试。</li>
-        <li>“保留数据更新”仅在分区表未变化时才适合保留既有数据。</li>
-        <li>页面会直接读取 GitHub Releases 中 <code>latest</code> 标签下的构建产物。</li>
-        <li>页面显示的构建时间来自固件资产的上传/更新时间，不只看 Release 记录时间。</li>
-        <li>备份文件会以原始 <code>.bin</code> 格式下载到本地浏览器。</li>
+        <li>If auto-download mode fails, hold <code>BOOT</code>, press <code>RESET</code>, then retry.</li>
+        <li>Use Preserve Data Update only when the partition layout has not changed.</li>
+        <li>The page reads firmware assets from the <code>latest</code> GitHub release.</li>
+        <li>Build time is based on firmware asset upload/update time, not only release publish time.</li>
+        <li>Backup files are downloaded as raw <code>.bin</code> images.</li>
       </ul>
-      <p class="hint">本页使用 ESP Web Tools；manifest 已按本仓库分区表配置，并直接指向 GitHub Release 产物。</p>
+      <p class="hint">Powered by ESP Web Tools. Manifests are preconfigured for this repository's partition layout and GitHub release assets.</p>
     </div>
   </main>
 
@@ -323,30 +323,35 @@
       preserve: "./manifest-preserve.json",
       erase: "./manifest-full.json",
     };
-    const releaseApi = "https://api.github.com/repos/shiftz300/CYDnote/releases/tags/latest";
     const githubDownloadPrefix = "https://github.com/";
     const ghproxyPrefix = "https://ghproxy.com/";
+    const akamsProxyPrefix = "https://github.akams.cn/";
+    const releaseApi = "https://api.github.com/repos/shiftz300/CYDnote/releases/tags/latest";
+    const releaseApiCandidates = [
+      { url: releaseApi, label: "GitHub API" },
+      { url: `${akamsProxyPrefix}${releaseApi}`, label: "github.akams.cn API mirror" },
+    ];
     const requiredByMode = {
       preserve: ["bootloader.bin", "partitions.bin", "firmware.bin"],
       erase: ["bootloader.bin", "partitions.bin", "firmware.bin", "littlefs.bin"],
     };
     const backupTargets = {
       littlefs: {
-        label: "LittleFS 分区",
+        label: "LittleFS partition",
         offset: 0x310000,
         size: 0x0E0000,
         prefix: "cydnote-littlefs-backup",
       },
       full: {
-        label: "整机 Flash",
+        label: "full flash",
         offset: 0x000000,
         size: 0x400000,
         prefix: "cydnote-full-backup",
       },
     };
     const summaryText = {
-      preserve: "当前模式：保留数据更新，不覆盖 0x310000 的 LittleFS 分区。",
-      erase: "当前模式：全量覆盖恢复，会写入 0x310000 的 LittleFS 分区并清空现有数据。",
+      preserve: "Current mode: Preserve Data Update. LittleFS at 0x310000 will not be overwritten.",
+      erase: "Current mode: Full Restore. LittleFS at 0x310000 will be overwritten.",
     };
 
     const installer = document.getElementById("installer");
@@ -369,7 +374,7 @@
 
     const serialSupported = typeof navigator !== "undefined" && "serial" in navigator;
     let currentManifestUrl = null;
-    let releaseNoteBase = "正在读取 GitHub Release 构建文件…";
+    let releaseNoteBase = "Loading GitHub release assets…";
     let backupInProgress = false;
     let flashAvailable = false;
     let esptoolModulePromise = null;
@@ -390,7 +395,7 @@
     function formatTimestamp(value) {
       const date = value ? new Date(value) : null;
       if (!date || Number.isNaN(date.getTime())) {
-        return "未知";
+        return "Unknown";
       }
       return date.toLocaleString(pageLocale, {
         year: "numeric",
@@ -406,7 +411,7 @@
 
     function formatErrorMessage(error, fallback) {
       if (error && typeof error.message === "string" && error.message.trim()) {
-        return `${fallback}（${error.message}）`;
+        return `${fallback} (${error.message})`;
       }
       return fallback;
     }
@@ -442,8 +447,9 @@
 
     function updateReleaseNote(text, isError = false) {
       releaseNoteBase = text;
+      const mirrorSuffix = " Firmware downloads will use the ghproxy mirror.";
       releaseNote.textContent = ghproxyToggle.checked
-        ? `${text} 当前固件下载将通过 ghproxy 镜像。`
+        ? `${text}${text.endsWith(".") ? "" : "."}${mirrorSuffix}`
         : text;
       releaseNote.classList.toggle("error", isError);
       logLine(releaseNote.textContent, isError ? "error" : "info");
@@ -476,15 +482,15 @@
 
     function updateBackupSummary() {
       const target = getSelectedBackupTarget();
-      backupSummary.textContent = `当前备份范围：${target.label}（起始 ${toHex(target.offset)}，大小 ${formatSize(target.size)}）。`;
-      backupButton.textContent = document.querySelector("input[name='backup-scope']:checked").value === "full" ? "开始全量备份" : "开始备份";
-      logLine(`备份范围已切换为${target.label}。`);
+      backupSummary.textContent = `Current backup range: ${target.label} (start ${toHex(target.offset)}, size ${formatSize(target.size)}).`;
+      backupButton.textContent = document.querySelector("input[name='backup-scope']:checked").value === "full" ? "Start Full Backup" : "Start Backup";
+      logLine(`Backup range changed to ${target.label}.`);
     }
 
     async function updateMode(mode) {
       const response = await fetch(manifests[mode]);
       if (!response.ok) {
-        throw new Error(`无法读取 manifest：${response.status} ${response.statusText}`);
+        throw new Error(`Cannot read manifest: ${response.status} ${response.statusText}`);
       }
       const manifest = await response.json();
       if (ghproxyToggle.checked) {
@@ -502,7 +508,7 @@
       currentManifestUrl = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: "application/json" }));
       installer.setAttribute("manifest", currentManifestUrl);
       summary.textContent = summaryText[mode];
-      logLine(`刷机模式已切换为${mode === "preserve" ? "保留数据更新" : "全量覆盖恢复"}。`);
+      logLine(`Flash mode switched to ${mode === "preserve" ? "Preserve Data Update" : "Full Restore"}.`);
     }
 
     function markEraseUnavailable() {
@@ -512,12 +518,12 @@
         const preserveRadio = document.querySelector("input[value='preserve']");
         preserveRadio.checked = true;
         updateMode("preserve").catch((error) => {
-          updateReleaseNote(formatErrorMessage(error, "切回保留数据更新失败"), true);
+          updateReleaseNote(formatErrorMessage(error, "Failed to switch back to Preserve Data Update"), true);
           flashAvailable = false;
           syncActionButtons();
         });
       }
-      logLine("由于缺少 littlefs.bin，已禁用全量覆盖恢复模式。", "warn");
+      logLine("Full Restore mode was disabled because littlefs.bin is missing.", "warn");
     }
 
     function updateBuildMetadata(release) {
@@ -533,18 +539,34 @@
         ? new Date(Math.max(...assetTimes))
         : null;
 
-      buildDate.textContent = newestAssetDate ? formatTimestamp(newestAssetDate.toISOString()) : "未知";
+      buildDate.textContent = newestAssetDate ? formatTimestamp(newestAssetDate.toISOString()) : "Unknown";
       releaseDate.textContent = formatTimestamp(release.published_at || release.created_at);
       releaseTag.textContent = release.tag_name || "latest";
     }
 
+    async function fetchReleaseInfoWithFallback() {
+      let lastError = null;
+      for (const source of releaseApiCandidates) {
+        try {
+          const response = await fetch(source.url, {
+            headers: { Accept: "application/vnd.github+json" },
+          });
+          if (!response.ok) throw new Error(`${source.label} ${response.status}`);
+          return {
+            release: await response.json(),
+            sourceLabel: source.label,
+          };
+        } catch (error) {
+          lastError = error;
+          logLine(`Failed to load release metadata (${source.label}): ${error.message}`, "warn");
+        }
+      }
+      throw lastError || new Error("Failed to load release metadata");
+    }
+
     async function loadReleaseInfo() {
       try {
-        const response = await fetch(releaseApi, {
-          headers: { Accept: "application/vnd.github+json" },
-        });
-        if (!response.ok) throw new Error(`GitHub API ${response.status}`);
-        const release = await response.json();
+        const { release, sourceLabel } = await fetchReleaseInfoWithFallback();
         const assetNames = new Set((release.assets || []).map((asset) => asset.name));
         const preserveReady = requiredByMode.preserve.every((name) => assetNames.has(name));
         const eraseReady = requiredByMode.erase.every((name) => assetNames.has(name));
@@ -553,7 +575,7 @@
 
         if (!preserveReady) {
           flashAvailable = false;
-          updateReleaseNote("latest release 缺少基础固件文件，暂时无法在线刷机。", true);
+          updateReleaseNote("The latest release is missing required firmware files. Flashing is unavailable.", true);
           markEraseUnavailable();
           syncActionButtons();
           return;
@@ -562,21 +584,24 @@
         const newestAsset = (release.assets || [])
           .filter((asset) => requiredByMode.preserve.includes(asset.name))
           .sort((left, right) => new Date(right.updated_at || right.created_at || 0) - new Date(left.updated_at || left.created_at || 0))[0];
-        const buildStamp = newestAsset ? formatTimestamp(newestAsset.updated_at || newestAsset.created_at) : "未知";
+        const buildStamp = newestAsset ? formatTimestamp(newestAsset.updated_at || newestAsset.created_at) : "Unknown";
 
         flashAvailable = true;
+        const sourceSuffix = sourceLabel === "GitHub API" ? "" : ` (metadata source: ${sourceLabel})`;
         if (eraseReady) {
-          updateReleaseNote(`已读取 release：${release.name || "Latest Build"}。固件构建时间：${buildStamp}。`);
+          releaseNoteBase = `Loaded release: ${release.name || "Latest Build"}. Firmware build time: ${buildStamp}.${sourceSuffix}`;
+          updateReleaseNote(releaseNoteBase);
         } else {
-          updateReleaseNote(`已读取 release：${release.name || "Latest Build"}，但缺少 littlefs.bin，因此仅保留“保留数据更新”模式。`, true);
+          releaseNoteBase = `Loaded release: ${release.name || "Latest Build"}, but littlefs.bin is missing. Only Preserve Data Update is available.${sourceSuffix}`;
+          updateReleaseNote(releaseNoteBase, true);
           markEraseUnavailable();
         }
         syncActionButtons();
       } catch (error) {
-        buildDate.textContent = "未知";
-        releaseDate.textContent = "未知";
+        buildDate.textContent = "Unknown";
+        releaseDate.textContent = "Unknown";
         flashAvailable = true;
-        updateReleaseNote(`读取 Release 元数据失败：${error.message}。页面将只保留基础刷机能力。`, true);
+        updateReleaseNote(`Failed to load release metadata: ${error.message}. Basic flashing capability is kept.`, true);
         markEraseUnavailable();
         syncActionButtons();
       }
@@ -593,7 +618,7 @@
       const percent = Math.min(100, Math.round((doneBytes / totalBytes) * 100));
       backupProgress.hidden = false;
       backupProgress.value = percent;
-      backupStatus.textContent = `正在读取${target.label}… ${percent}%（${Math.round(doneBytes / 1024)} KB / ${Math.round(totalBytes / 1024)} KB）`;
+      backupStatus.textContent = `Reading ${target.label}... ${percent}% (${Math.round(doneBytes / 1024)} KB / ${Math.round(totalBytes / 1024)} KB)`;
     }
 
     function downloadBackup(data, target) {
@@ -619,7 +644,7 @@
       backupProgress.hidden = false;
       backupProgress.value = 0;
       syncActionButtons();
-      setBackupStatus(`开始备份${target.label}（${toHex(target.offset)}，${formatSize(target.size)}）…`);
+      setBackupStatus(`Starting backup: ${target.label} (${toHex(target.offset)}, ${formatSize(target.size)})...`);
 
       let transport = null;
       try {
@@ -633,21 +658,21 @@
         });
 
         const chip = await loader.main();
-        logLine(`已连接设备：${chip}。`);
+        logLine(`Connected device: ${chip}.`);
         const data = await loader.readFlash(target.offset, target.size, (_packet, doneBytes, totalBytes) => {
           updateBackupProgress(target, doneBytes, totalBytes);
         });
         const fileName = downloadBackup(data, target);
         backupProgress.value = 100;
-        setBackupStatus(`备份完成：${fileName}`);
+        setBackupStatus(`Backup complete: ${fileName}`);
       } catch (error) {
-        setBackupStatus(formatErrorMessage(error, `${target.label}备份失败`), true);
+        setBackupStatus(formatErrorMessage(error, `${target.label} backup failed`), true);
       } finally {
         if (transport) {
           try {
             await transport.disconnect();
           } catch (disconnectError) {
-            logLine(formatErrorMessage(disconnectError, "断开备份连接时出现提示"), "warn");
+            logLine(formatErrorMessage(disconnectError, "Warning while disconnecting backup session"), "warn");
           }
         }
         backupInProgress = false;
@@ -664,7 +689,7 @@
           syncActionButtons();
         } catch (error) {
           flashAvailable = false;
-          updateReleaseNote(formatErrorMessage(error, "切换刷机模式失败"), true);
+          updateReleaseNote(formatErrorMessage(error, "Failed to switch flash mode"), true);
           syncActionButtons();
         }
       });
@@ -684,13 +709,13 @@
         updateReleaseNote(releaseNoteBase, releaseNote.classList.contains("error"));
       } catch (error) {
         flashAvailable = false;
-        updateReleaseNote(formatErrorMessage(error, "切换 ghproxy 失败"), true);
+        updateReleaseNote(formatErrorMessage(error, "Failed to switch ghproxy"), true);
         syncActionButtons();
       }
     });
 
     flashButton.addEventListener("click", () => {
-      logLine(`已打开刷机流程：${getSelectedMode() === "preserve" ? "保留数据更新" : "全量覆盖恢复"}。`);
+      logLine(`Flashing flow opened: ${getSelectedMode() === "preserve" ? "Preserve Data Update" : "Full Restore"}.`);
     });
     backupButton.addEventListener("click", handleBackup);
 
@@ -700,13 +725,13 @@
 
     updateBackupSummary();
     if (!serialSupported) {
-      setBackupStatus("当前浏览器不支持 Web Serial，无法使用备份功能。", true);
+      setBackupStatus("Web Serial is not supported in this browser. Backup is unavailable.", true);
     }
     syncActionButtons();
     updateReleaseNote(releaseNoteBase);
     Promise.all([updateMode("preserve"), loadReleaseInfo()]).catch((error) => {
       flashAvailable = false;
-      updateReleaseNote(formatErrorMessage(error, "初始化刷机页面失败"), true);
+      updateReleaseNote(formatErrorMessage(error, "Failed to initialize the flasher page"), true);
       syncActionButtons();
     });
   </script>
