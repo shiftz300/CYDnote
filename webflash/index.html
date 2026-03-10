@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-US">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -237,15 +237,15 @@
         <label class="option">
           <input type="radio" name="flash-mode" value="preserve" checked>
           <span>
-             <strong>Preserve Data Update</strong>
-             Updates bootloader, partitions, and firmware only. Keeps LittleFS data unchanged.
+            <strong>Preserve Data Update</strong>
+            Updates bootloader, partitions, and firmware only. Keeps LittleFS data unchanged.
           </span>
         </label>
         <label class="option">
           <input type="radio" name="flash-mode" value="erase">
           <span>
-             <strong>Full Restore</strong>
-             Also writes LittleFS image and overwrites local device data.
+            <strong>Full Restore</strong>
+            Also writes LittleFS image and overwrites local device data.
           </span>
         </label>
       </div>
@@ -257,7 +257,7 @@
           <input type="checkbox" id="ghproxy-toggle">
             <span>
               Use <code>ghproxy</code> mirror for faster firmware downloads
-              <small>If direct GitHub API access fails, this page will retry release metadata through <code>ghproxy</code>.</small>
+              <small>If direct GitHub API access fails, this page will automatically fetch release metadata through <code>ghproxy</code>.</small>
             </span>
         </label>
       </div>
@@ -304,7 +304,7 @@
 
       <div class="log-panel">
         <h2>Status Log</h2>
-        <pre id="log-window" aria-live="polite">[wait] Initializing page…</pre>
+        <pre id="log-window" aria-live="polite">[WAIT] Initializing page…</pre>
       </div>
 
       <ul>
@@ -446,8 +446,9 @@
 
     function updateReleaseNote(text, isError = false) {
       releaseNoteBase = text;
+      const mirrorSuffix = " Firmware downloads will use the ghproxy mirror.";
       releaseNote.textContent = ghproxyToggle.checked
-        ? `${text} Firmware downloads will use the ghproxy mirror.`
+        ? `${text}${text.endsWith(".") ? "" : "."}${mirrorSuffix}`
         : text;
       releaseNote.classList.toggle("error", isError);
       logLine(releaseNote.textContent, isError ? "error" : "info");
@@ -670,7 +671,7 @@
           try {
             await transport.disconnect();
           } catch (disconnectError) {
-              logLine(formatErrorMessage(disconnectError, "Warning while disconnecting backup session"), "warn");
+            logLine(formatErrorMessage(disconnectError, "Warning while disconnecting backup session"), "warn");
           }
         }
         backupInProgress = false;
