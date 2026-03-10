@@ -257,7 +257,7 @@
           <input type="checkbox" id="ghproxy-toggle">
             <span>
               Use <code>ghproxy</code> mirror for faster firmware downloads
-              <small>If direct GitHub API access fails, this page will automatically fetch release metadata through <code>ghproxy</code>.</small>
+              <small>If direct GitHub API access fails, this page will automatically fetch release metadata through <code>github.akams.cn</code>.</small>
             </span>
         </label>
       </div>
@@ -325,10 +325,11 @@
     };
     const githubDownloadPrefix = "https://github.com/";
     const ghproxyPrefix = "https://ghproxy.com/";
+    const akamsProxyPrefix = "https://github.akams.cn/";
     const releaseApi = "https://api.github.com/repos/shiftz300/CYDnote/releases/tags/latest";
     const releaseApiCandidates = [
       { url: releaseApi, label: "GitHub API" },
-      { url: `${ghproxyPrefix}${releaseApi}`, label: "ghproxy API mirror" },
+      { url: `${akamsProxyPrefix}${releaseApi}`, label: "github.akams.cn API mirror" },
     ];
     const requiredByMode = {
       preserve: ["bootloader.bin", "partitions.bin", "firmware.bin"],

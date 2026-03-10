@@ -43,7 +43,7 @@
 - 浏览器需使用支持 Web Serial 的 Chrome / Edge
 - “保留数据更新”只在分区布局保持不变时才适合保留现有数据
 - 若 GitHub 官方下载较慢，可在页面里勾选 `ghproxy` 镜像加速固件下载
-- `ghproxy` 默认用于代理固件下载 URL；若直连 GitHub API 失败，页面会自动尝试通过 `ghproxy` 拉取 release 元数据
+- `ghproxy` 默认用于代理固件下载 URL；若直连 GitHub API 失败，页面会自动尝试通过 `https://github.akams.cn/` 拉取 release 元数据
 - 页面加载时会先检查 `latest` release 资产；若缺少 `littlefs.bin`，会自动禁用“全量覆盖恢复”
 - 若 `latest` release 中缺少基础固件文件（`bootloader.bin`、`partitions.bin`、`firmware.bin`），网页会阻止开始刷机
 - 若浏览器环境暂时无法访问 GitHub API，页面会回退为只保留“保留数据更新”模式
