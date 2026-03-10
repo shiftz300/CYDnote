@@ -16,7 +16,7 @@
 
 class FileManager {
 private:
-    static constexpr uint16_t SCREEN_TRANSITION_MS = 55;
+    static constexpr uint16_t SCREEN_TRANSITION_MS = 80;
     static constexpr uint16_t IME_SLIDE_IN_MS = 90;
     static constexpr uint16_t IME_SLIDE_OUT_MS = 80;
     static constexpr int32_t DIALOG_LIFT_Y = -84;
@@ -24,7 +24,6 @@ private:
     static constexpr int32_t IME_KEYBOARD_H = 132;
     static constexpr int32_t INPUT_TEXT_SIZE_PX = 14;
     static constexpr int32_t IME_TOTAL_H_FALLBACK = IME_CANDIDATE_H + IME_KEYBOARD_H;
-    static constexpr uint8_t IME_PROXY_CAND_MAX = 20;
     static constexpr size_t COPY_IO_CHUNK = 24576;
     static constexpr uint8_t COPY_CHUNKS_PER_TICK = 12;
     enum FsWorkerJobType {
@@ -103,18 +102,12 @@ private:
     lv_obj_t* dialog_ime_container;
     lv_obj_t* dialog_ime;
     lv_obj_t* dialog_keyboard;
-    lv_obj_t* dialog_ime_cand_proxy;
-    lv_obj_t* dialog_ime_cand_src;
     lv_obj_t* dialog_new_file_btn;
     lv_obj_t* dialog_new_dir_btn;
     lv_obj_t* share_info_label;
     lv_obj_t* share_action_btn;
     lv_obj_t* share_action_label;
     bool dialog_ime_font_acquired;
-    char dialog_ime_cand_texts[IME_PROXY_CAND_MAX][8];
-    const char* dialog_ime_cand_map[IME_PROXY_CAND_MAX + 1];
-    uint8_t dialog_ime_cand_src_idx[IME_PROXY_CAND_MAX];
-    bool dialog_ime_cand_syncing;
     std::function<void(const char*)> on_open_cb;
     std::function<bool()> on_share_ap_toggle_cb;
     std::function<bool()> on_share_ap_running_cb;
@@ -169,17 +162,14 @@ public:
     FileManager()
         : screen(nullptr), sidebar(nullptr), breadcrumb_wrap(nullptr), file_list(nullptr),
           empty_label(nullptr), fs_bar(nullptr), fs_label(nullptr), fs_panel(nullptr), up_btn_ref(nullptr), share_btn_ref(nullptr), drive_btn_l(nullptr), drive_btn_d(nullptr), menu_panel(nullptr), menu_copy_btn(nullptr), menu_move_btn(nullptr), menu_paste_btn(nullptr), menu_paste_label(nullptr), menu_paste_progress_track(nullptr), menu_paste_progress_bg(nullptr), menu_copy_cancel_btn(nullptr), menu_copy_cancel_label(nullptr), copy_timer(nullptr), delete_timer(nullptr), fs_job_timer(nullptr), copy_src_drive('L'), copy_dst_drive('L'), copy_src_inner(""), copy_dst_inner(""), copy_total_bytes(0), copy_done_bytes(0), copy_total_files(0), copy_done_files(0), copy_is_dir_job(false), dialog_box(nullptr), dialog_input(nullptr),
-          dialog_ime_container(nullptr), dialog_ime(nullptr), dialog_keyboard(nullptr), dialog_ime_cand_proxy(nullptr), dialog_ime_cand_src(nullptr),
+                    dialog_ime_container(nullptr), dialog_ime(nullptr), dialog_keyboard(nullptr),
           dialog_new_file_btn(nullptr), dialog_new_dir_btn(nullptr), share_info_label(nullptr), share_action_btn(nullptr), share_action_label(nullptr),
-          dialog_ime_font_acquired(false), dialog_ime_cand_syncing(false),
+                    dialog_ime_font_acquired(false),
           on_open_cb(nullptr), on_share_ap_toggle_cb(nullptr), on_share_ap_running_cb(nullptr), on_share_ap_status_cb(nullptr),
           sd_ready(false), remove_mode(false), copy_pick_mode(false), move_pick_mode(false), active_drive('L'),
           current_path("/"), selected_vpath(""), copied_vpath(""), moved_vpath(""), pending_open_vpath(""), new_as_dir(false), copy_cancel_requested(false), copy_in_progress(false), delete_in_progress(false), copy_dir_worker_mode(false), fs_job_in_progress(false), copy_started_ms(0), fs_worker_task(nullptr), fs_worker_job(FS_WORK_NONE), fs_worker_busy(false), fs_worker_done(false), fs_worker_ok(false), fs_worker_delete_done(0), fs_worker_delete_removed(0), fs_worker_delete_total(0), fs_worker_delete_force(false), fs_worker_src_vpath(""), fs_worker_dst_vpath(""), fs_worker_arg1(""), fs_worker_arg2(""), fs_worker_scan_items(), fs_worker_scan_vpath(""), scan_in_progress(false), scan_result_ready(false), scan_result_ok(false), dialog_mode(DIALOG_NONE),
           fs_usage_last_ms(0), fs_usage_last_pct(0), fs_usage_last_valid(false), list_suspended_for_dialog(false), reset_scroll_pending(true),
           dialog_ime_cursor_anchor_pos(0), dialog_ime_cursor_anchor_valid(false) {
-        memset(dialog_ime_cand_texts, 0, sizeof(dialog_ime_cand_texts));
-        memset(dialog_ime_cand_map, 0, sizeof(dialog_ime_cand_map));
-        memset(dialog_ime_cand_src_idx, 0xFF, sizeof(dialog_ime_cand_src_idx));
     }
 
     void create(bool has_sd, std::function<void(const char*)> on_open = nullptr,
@@ -391,7 +381,10 @@ public:
         lv_obj_align(menu_panel, LV_ALIGN_TOP_LEFT, 0, 72);
         lv_obj_set_style_bg_color(menu_panel, lv_color_hex(0x080808), 0);
         lv_obj_set_style_border_color(menu_panel, lv_color_hex(0x404040), 0);
-        lv_obj_set_style_pad_all(menu_panel, 4, 0);
+        lv_obj_set_style_pad_left(menu_panel, 4, 0);
+        lv_obj_set_style_pad_right(menu_panel, 4, 0);
+        lv_obj_set_style_pad_top(menu_panel, 2, 0);
+        lv_obj_set_style_pad_bottom(menu_panel, 2, 0);
         lv_obj_set_style_pad_row(menu_panel, 2, 0);
         lv_obj_set_flex_flow(menu_panel, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_scroll_dir(menu_panel, LV_DIR_VER);
@@ -461,8 +454,6 @@ public:
             dialog_ime_container = nullptr;
             dialog_ime = nullptr;
             dialog_keyboard = nullptr;
-            dialog_ime_cand_proxy = nullptr;
-            dialog_ime_cand_src = nullptr;
             share_info_label = nullptr;
             share_action_btn = nullptr;
             share_action_label = nullptr;
@@ -687,11 +678,13 @@ private:
     static void menu_rename_event_cb(lv_event_t* e) {
         FileManager* fm = (FileManager*)lv_event_get_user_data(e);
         if (!fm) return;
-        fm->exitRemoveModeIfNeeded(true);
+        String target_vpath = fm->selected_vpath;
+        fm->exitRemoveModeIfNeeded(false);
         fm->exitCopyPickModeIfNeeded(false);
         fm->exitMovePickModeIfNeeded(false);
-        if (fm->selected_vpath.length() == 0) return;
-        String cur = fm->baseName(fm->innerPath(fm->selected_vpath));
+        if (target_vpath.length() == 0) return;
+        fm->selected_vpath = target_vpath;
+        String cur = fm->baseName(fm->innerPath(target_vpath));
         fm->openInputDialog(DIALOG_RENAME, "Rename to", cur.c_str());
     }
 
@@ -830,8 +823,6 @@ private:
         fm->dialog_ime_container = nullptr;
         fm->dialog_ime = nullptr;
         fm->dialog_keyboard = nullptr;
-        fm->dialog_ime_cand_proxy = nullptr;
-        fm->dialog_ime_cand_src = nullptr;
         fm->releaseDialogIMEFont();
     }
 
@@ -1374,83 +1365,128 @@ private:
         current_path = (idx <= 0) ? "/" : current_path.substring(0, idx);
     }
 
+    // --- Dialog helper methods ---
+    lv_obj_t* makeDialogBox(int32_t width) {
+        lv_obj_t* box = lv_obj_create(screen);
+        lv_obj_add_flag(box, LV_OBJ_FLAG_FLOATING);
+        lv_obj_add_flag(box, LV_OBJ_FLAG_IGNORE_LAYOUT);
+        lv_obj_set_width(box, width);
+        lv_obj_set_height(box, LV_SIZE_CONTENT);
+        lv_obj_center(box);
+        lv_obj_set_style_bg_color(box, lv_color_hex(0x000000), 0);
+        lv_obj_set_style_border_color(box, lv_color_hex(0x505050), 0);
+        lv_obj_set_style_pad_all(box, 6, 0);
+        lv_obj_set_style_pad_row(box, 4, 0);
+        lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+        lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+        return box;
+    }
+
+    void addDialogTitle(lv_obj_t* box, const char* text) {
+        lv_obj_t* lbl = lv_label_create(box);
+        lv_label_set_text(lbl, text);
+        lv_obj_set_style_text_font(lbl, FontManager::textFont(), 0);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(0xFFFFFF), 0);
+    }
+
+    lv_obj_t* makeDialogButtonRow(lv_obj_t* parent, int32_t h = 36, int32_t pad_v = 1, int32_t pad_col = 6) {
+        lv_obj_t* row = lv_obj_create(parent);
+        lv_obj_remove_style_all(row);
+        lv_obj_set_width(row, lv_pct(100));
+        lv_obj_set_height(row, h);
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_bg_color(row, lv_color_hex(0x000000), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(row, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_width(row, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_left(row, 2, LV_PART_MAIN);
+        lv_obj_set_style_pad_right(row, 2, LV_PART_MAIN);
+        lv_obj_set_style_pad_top(row, pad_v, LV_PART_MAIN);
+        lv_obj_set_style_pad_bottom(row, pad_v, LV_PART_MAIN);
+        if (pad_col > 0) lv_obj_set_style_pad_column(row, pad_col, LV_PART_MAIN);
+        lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+        return row;
+    }
+
+    lv_obj_t* makeDialogButton(lv_obj_t* parent_row, const char* label, int32_t w, int32_t h, lv_event_cb_t cb) {
+        lv_obj_t* btn = lv_button_create(parent_row);
+        lv_obj_set_size(btn, w, h);
+        styleActionButton(btn);
+        lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, this);
+        lv_obj_t* lbl = lv_label_create(btn);
+        lv_label_set_text(lbl, label);
+        lv_obj_set_style_text_font(lbl, FontManager::iconFont(), 0);
+        lv_obj_center(lbl);
+        return btn;
+    }
+
+    lv_obj_t* makeDialogTypeButton(lv_obj_t* row, const char* label, int32_t w, lv_event_cb_t cb) {
+        return makeDialogButton(row, label, w, 28, cb);
+    }
+
+    lv_obj_t* makeInputDialogBox(int32_t width) {
+        lv_obj_t* box = lv_obj_create(screen);
+        lv_obj_add_flag(box, LV_OBJ_FLAG_FLOATING);
+        lv_obj_add_flag(box, LV_OBJ_FLAG_IGNORE_LAYOUT);
+        lv_obj_remove_style_all(box);
+        lv_obj_set_width(box, width);
+        lv_obj_set_height(box, LV_SIZE_CONTENT);
+        lv_obj_center(box);
+        lv_obj_set_style_bg_color(box, lv_color_hex(0x000000), 0);
+        lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(box, lv_color_hex(0x505050), 0);
+        lv_obj_set_style_border_width(box, 1, 0);
+        lv_obj_set_style_radius(box, 6, 0);
+        lv_obj_set_style_clip_corner(box, true, 0);
+        lv_obj_set_style_shadow_width(box, 0, 0);
+        lv_obj_set_style_outline_width(box, 0, 0);
+        lv_obj_set_style_pad_all(box, 6, 0);
+        lv_obj_set_style_pad_row(box, 4, 0);
+        lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+        lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+        return box;
+    }
+
+    lv_obj_t* addDialogInfoText(lv_obj_t* box, const char* text, const lv_font_t* font) {
+        return addDialogWrapText(box, text, font, lv_color_hex(0xD0E6FF));
+    }
+
+    lv_obj_t* addDialogWrapText(lv_obj_t* box, const char* text, const lv_font_t* font, lv_color_t color) {
+        lv_obj_t* lbl = lv_label_create(box);
+        lv_label_set_text(lbl, text);
+        lv_label_set_long_mode(lbl, LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(lbl, lv_pct(100));
+        lv_obj_set_style_text_font(lbl, font, 0);
+        lv_obj_set_style_text_color(lbl, color, 0);
+        return lbl;
+    }
+
+    void addDialogOkRow(lv_obj_t* box) {
+        lv_obj_t* row = makeDialogButtonRow(box);
+        makeDialogButton(row, "OK", 56, 28, dialog_cancel_event_cb);
+    }
+
     void openInputDialog(DialogMode mode, const char* title, const char* initial) {
         closeMenuPanel();
         closeDialog();
         suspendListForDialog();
         dialog_mode = mode;
 
-        dialog_box = lv_obj_create(screen);
-        lv_obj_add_flag(dialog_box, LV_OBJ_FLAG_FLOATING);
-        lv_obj_add_flag(dialog_box, LV_OBJ_FLAG_IGNORE_LAYOUT);
-        lv_obj_remove_style_all(dialog_box);
-        lv_obj_set_width(dialog_box, 186);
-        lv_obj_set_height(dialog_box, LV_SIZE_CONTENT);
-        lv_obj_center(dialog_box);
-        lv_obj_set_style_bg_color(dialog_box, lv_color_hex(0x000000), 0);
-        lv_obj_set_style_bg_opa(dialog_box, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_color(dialog_box, lv_color_hex(0x505050), 0);
-        lv_obj_set_style_border_width(dialog_box, 1, 0);
-        lv_obj_set_style_radius(dialog_box, 6, 0);
-        lv_obj_set_style_clip_corner(dialog_box, true, 0);
-        lv_obj_set_style_shadow_width(dialog_box, 0, 0);
-        lv_obj_set_style_outline_width(dialog_box, 0, 0);
-        lv_obj_set_style_pad_all(dialog_box, 6, 0);
-        lv_obj_set_style_pad_row(dialog_box, 4, 0);
-        lv_obj_set_flex_flow(dialog_box, LV_FLEX_FLOW_COLUMN);
-        lv_obj_clear_flag(dialog_box, LV_OBJ_FLAG_SCROLLABLE);
+        dialog_box = makeInputDialogBox(186);
 
-        lv_obj_t* title_lbl = lv_label_create(dialog_box);
-        lv_label_set_text(title_lbl, title);
-        lv_label_set_long_mode(title_lbl, LV_LABEL_LONG_WRAP);
-        lv_obj_set_width(title_lbl, lv_pct(100));
-        lv_obj_set_style_text_color(title_lbl, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_set_style_text_font(title_lbl, FontManager::textFont(), 0);
+        addDialogWrapText(dialog_box, title, FontManager::textFont(), lv_color_hex(0xFFFFFF));
 
         const char* hint_text = "Enter a name.";
         if (mode == DIALOG_RENAME) hint_text = "Enter a new name.";
 
-        lv_obj_t* hint_lbl = lv_label_create(dialog_box);
-        lv_label_set_text(hint_lbl, hint_text);
-        lv_label_set_long_mode(hint_lbl, LV_LABEL_LONG_WRAP);
-        lv_obj_set_width(hint_lbl, lv_pct(100));
-        lv_obj_set_style_text_color(hint_lbl, lv_color_hex(0xB0B0B0), 0);
-        lv_obj_set_style_text_font(hint_lbl, FontManager::iconFont(), 0);
+        addDialogWrapText(dialog_box, hint_text, FontManager::iconFont(), lv_color_hex(0xB0B0B0));
 
         if (mode == DIALOG_NEW_ENTRY) {
-            lv_obj_t* type_row = lv_obj_create(dialog_box);
-            lv_obj_remove_style_all(type_row);
-            lv_obj_set_width(type_row, lv_pct(100));
-            lv_obj_set_height(type_row, 30);
-            lv_obj_set_style_bg_color(type_row, lv_color_hex(0x000000), LV_PART_MAIN);
-            lv_obj_set_style_bg_opa(type_row, LV_OPA_COVER, LV_PART_MAIN);
-            lv_obj_set_style_border_width(type_row, 0, LV_PART_MAIN);
-            lv_obj_set_style_pad_left(type_row, 2, LV_PART_MAIN);
-            lv_obj_set_style_pad_right(type_row, 2, LV_PART_MAIN);
-            lv_obj_set_style_pad_top(type_row, 0, LV_PART_MAIN);
-            lv_obj_set_style_pad_bottom(type_row, 0, LV_PART_MAIN);
-            lv_obj_set_style_pad_column(type_row, 6, 0);
-            lv_obj_set_flex_flow(type_row, LV_FLEX_FLOW_ROW);
+            lv_obj_t* type_row = makeDialogButtonRow(dialog_box, 30, 0, 6);
             lv_obj_set_flex_align(type_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-            lv_obj_clear_flag(type_row, LV_OBJ_FLAG_SCROLLABLE);
 
-            dialog_new_file_btn = lv_button_create(type_row);
-            lv_obj_set_size(dialog_new_file_btn, 76, 28);
-            styleActionButton(dialog_new_file_btn);
-            lv_obj_add_event_cb(dialog_new_file_btn, new_type_file_event_cb, LV_EVENT_CLICKED, this);
-            lv_obj_t* file_lbl = lv_label_create(dialog_new_file_btn);
-            lv_label_set_text(file_lbl, LV_SYMBOL_FILE " File");
-            lv_obj_set_style_text_font(file_lbl, FontManager::iconFont(), 0);
-            lv_obj_center(file_lbl);
-
-            dialog_new_dir_btn = lv_button_create(type_row);
-            lv_obj_set_size(dialog_new_dir_btn, 86, 28);
-            styleActionButton(dialog_new_dir_btn);
-            lv_obj_add_event_cb(dialog_new_dir_btn, new_type_dir_event_cb, LV_EVENT_CLICKED, this);
-            lv_obj_t* dir_lbl = lv_label_create(dialog_new_dir_btn);
-            lv_label_set_text(dir_lbl, LV_SYMBOL_DIRECTORY " Folder");
-            lv_obj_set_style_text_font(dir_lbl, FontManager::iconFont(), 0);
-            lv_obj_center(dir_lbl);
+            dialog_new_file_btn = makeDialogTypeButton(type_row, LV_SYMBOL_FILE " File", 76, new_type_file_event_cb);
+            dialog_new_dir_btn = makeDialogTypeButton(type_row, LV_SYMBOL_DIRECTORY " Folder", 86, new_type_dir_event_cb);
 
             updateNewTypeButtons();
         }
@@ -1477,39 +1513,10 @@ private:
         dialog_ime_cursor_anchor_pos = lv_textarea_get_cursor_pos(dialog_input);
         dialog_ime_cursor_anchor_valid = true;
 
-        lv_obj_t* row = lv_obj_create(dialog_box);
-        lv_obj_remove_style_all(row);
-        lv_obj_set_width(row, lv_pct(100));
-        lv_obj_set_height(row, 42);
-        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_bg_color(row, lv_color_hex(0x000000), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(row, LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_border_width(row, 0, LV_PART_MAIN);
-        lv_obj_set_style_pad_left(row, 2, LV_PART_MAIN);
-        lv_obj_set_style_pad_right(row, 2, LV_PART_MAIN);
-        lv_obj_set_style_pad_top(row, 2, LV_PART_MAIN);
-        lv_obj_set_style_pad_bottom(row, 2, LV_PART_MAIN);
-        lv_obj_set_style_pad_column(row, 6, LV_PART_MAIN);
-        lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_t* row = makeDialogButtonRow(dialog_box, 42, 2);
 
-        lv_obj_t* cancel_btn = lv_button_create(row);
-        lv_obj_set_size(cancel_btn, 70, 30);
-        styleActionButton(cancel_btn);
-        lv_obj_add_event_cb(cancel_btn, dialog_cancel_event_cb, LV_EVENT_CLICKED, this);
-        lv_obj_t* cancel_lbl = lv_label_create(cancel_btn);
-        lv_label_set_text(cancel_lbl, "Cancel");
-        lv_obj_set_style_text_font(cancel_lbl, FontManager::iconFont(), 0);
-        lv_obj_center(cancel_lbl);
-
-        lv_obj_t* ok_btn = lv_button_create(row);
-        lv_obj_set_size(ok_btn, 54, 30);
-        styleActionButton(ok_btn);
-        lv_obj_add_event_cb(ok_btn, dialog_ok_event_cb, LV_EVENT_CLICKED, this);
-        lv_obj_t* ok_lbl = lv_label_create(ok_btn);
-        lv_label_set_text(ok_lbl, "OK");
-        lv_obj_set_style_text_font(ok_lbl, FontManager::iconFont(), 0);
-        lv_obj_center(ok_lbl);
+        makeDialogButton(row, "Cancel", 70, 30, dialog_cancel_event_cb);
+        makeDialogButton(row, "OK", 54, 30, dialog_ok_event_cb);
 
     }
 
@@ -1606,7 +1613,6 @@ private:
             lv_obj_set_style_text_color(cand_panel, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_FOCUSED);
             lv_obj_set_style_text_color(cand_panel, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_PRESSED);
             lv_obj_set_style_text_color(cand_panel, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_CHECKED);
-            dialog_ime_cand_src = cand_panel;
         }
 
         lv_obj_add_state(dialog_input, LV_STATE_FOCUSED);
@@ -1690,54 +1696,16 @@ private:
         closeMenuPanel();
         closeDialog();
 
-        dialog_box = lv_obj_create(screen);
-        lv_obj_add_flag(dialog_box, LV_OBJ_FLAG_FLOATING);
-        lv_obj_add_flag(dialog_box, LV_OBJ_FLAG_IGNORE_LAYOUT);
-        lv_obj_set_width(dialog_box, 206);
-        lv_obj_set_height(dialog_box, LV_SIZE_CONTENT);
-        lv_obj_center(dialog_box);
-        lv_obj_set_style_bg_color(dialog_box, lv_color_hex(0x000000), 0);
-        lv_obj_set_style_border_color(dialog_box, lv_color_hex(0x505050), 0);
-        lv_obj_set_style_pad_all(dialog_box, 6, 0);
-        lv_obj_set_style_pad_row(dialog_box, 4, 0);
-        lv_obj_set_flex_flow(dialog_box, LV_FLEX_FLOW_COLUMN);
-        lv_obj_clear_flag(dialog_box, LV_OBJ_FLAG_SCROLLABLE);
+        dialog_box = makeDialogBox(206);
+        addDialogTitle(dialog_box, "Share");
 
-        lv_obj_t* title = lv_label_create(dialog_box);
-        lv_label_set_text(title, "Share");
-        lv_obj_set_style_text_font(title, FontManager::textFont(), 0);
-        lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
+        share_info_label = addDialogWrapText(dialog_box, "", FontManager::textFont(), lv_color_hex(0xD0E6FF));
 
-        share_info_label = lv_label_create(dialog_box);
-        lv_obj_set_width(share_info_label, lv_pct(100));
-        lv_label_set_long_mode(share_info_label, LV_LABEL_LONG_WRAP);
-        lv_obj_set_style_text_font(share_info_label, FontManager::textFont(), 0);
-        lv_obj_set_style_text_color(share_info_label, lv_color_hex(0xD0E6FF), 0);
+        lv_obj_t* row = makeDialogButtonRow(dialog_box);
 
-        lv_obj_t* row = lv_obj_create(dialog_box);
-        lv_obj_remove_style_all(row);
-        lv_obj_set_width(row, lv_pct(100));
-        lv_obj_set_height(row, 36);
-        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_pad_column(row, 6, LV_PART_MAIN);
-        lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-
-        lv_obj_t* close_btn = lv_button_create(row);
-        lv_obj_set_size(close_btn, 56, 28);
-        styleActionButton(close_btn);
-        lv_obj_add_event_cb(close_btn, dialog_cancel_event_cb, LV_EVENT_CLICKED, this);
-        lv_obj_t* close_lbl = lv_label_create(close_btn);
-        lv_label_set_text(close_lbl, "Close");
-        lv_obj_center(close_lbl);
-
-        share_action_btn = lv_button_create(row);
-        lv_obj_set_size(share_action_btn, 72, 28);
-        styleActionButton(share_action_btn);
-        lv_obj_add_event_cb(share_action_btn, share_action_event_cb, LV_EVENT_CLICKED, this);
-        share_action_label = lv_label_create(share_action_btn);
-        lv_label_set_text(share_action_label, "Start AP");
-        lv_obj_center(share_action_label);
+        makeDialogButton(row, "Close", 56, 28, dialog_cancel_event_cb);
+        share_action_btn = makeDialogButton(row, "Start AP", 72, 28, share_action_event_cb);
+        share_action_label = lv_obj_get_child(share_action_btn, 0);
 
         refreshShareDialog();
     }
@@ -1746,23 +1714,8 @@ private:
         closeMenuPanel();
         closeDialog();
 
-        dialog_box = lv_obj_create(screen);
-        lv_obj_add_flag(dialog_box, LV_OBJ_FLAG_FLOATING);
-        lv_obj_add_flag(dialog_box, LV_OBJ_FLAG_IGNORE_LAYOUT);
-        lv_obj_set_width(dialog_box, 198);
-        lv_obj_set_height(dialog_box, LV_SIZE_CONTENT);
-        lv_obj_center(dialog_box);
-        lv_obj_set_style_bg_color(dialog_box, lv_color_hex(0x000000), 0);
-        lv_obj_set_style_border_color(dialog_box, lv_color_hex(0x505050), 0);
-        lv_obj_set_style_pad_all(dialog_box, 6, 0);
-        lv_obj_set_style_pad_row(dialog_box, 4, 0);
-        lv_obj_set_flex_flow(dialog_box, LV_FLEX_FLOW_COLUMN);
-        lv_obj_clear_flag(dialog_box, LV_OBJ_FLAG_SCROLLABLE);
-
-        lv_obj_t* title = lv_label_create(dialog_box);
-        lv_label_set_text(title, "File Info");
-        lv_obj_set_style_text_font(title, FontManager::textFont(), 0);
-        lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
+        dialog_box = makeDialogBox(198);
+        addDialogTitle(dialog_box, "File Info");
 
         char info[220];
         if (active_drive == 'L') {
@@ -1800,35 +1753,8 @@ private:
             lv_snprintf(info, sizeof(info), "Unknown drive");
         }
 
-        lv_obj_t* txt = lv_label_create(dialog_box);
-        lv_label_set_text(txt, info);
-        lv_label_set_long_mode(txt, LV_LABEL_LONG_WRAP);
-        lv_obj_set_width(txt, lv_pct(100));
-        lv_obj_set_style_text_font(txt, FontManager::iconFont(), 0);
-        lv_obj_set_style_text_color(txt, lv_color_hex(0xD0E6FF), 0);
-
-        lv_obj_t* row = lv_obj_create(dialog_box);
-        lv_obj_remove_style_all(row);
-        lv_obj_set_width(row, lv_pct(100));
-        lv_obj_set_height(row, 36);
-        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_bg_color(row, lv_color_hex(0x000000), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(row, LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_border_width(row, 0, LV_PART_MAIN);
-        lv_obj_set_style_pad_left(row, 2, LV_PART_MAIN);
-        lv_obj_set_style_pad_right(row, 2, LV_PART_MAIN);
-        lv_obj_set_style_pad_top(row, 1, LV_PART_MAIN);
-        lv_obj_set_style_pad_bottom(row, 1, LV_PART_MAIN);
-        lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-
-        lv_obj_t* ok = lv_button_create(row);
-        lv_obj_set_size(ok, 56, 28);
-        styleActionButton(ok);
-        lv_obj_add_event_cb(ok, dialog_cancel_event_cb, LV_EVENT_CLICKED, this);
-        lv_obj_t* ok_lbl = lv_label_create(ok);
-        lv_label_set_text(ok_lbl, "OK");
-        lv_obj_center(ok_lbl);
+        addDialogInfoText(dialog_box, info, FontManager::iconFont());
+        addDialogOkRow(dialog_box);
     }
 
     void openEntryInfoDialog(const String& vpath) {
@@ -1840,23 +1766,8 @@ private:
         uint64_t file_size = 0;
         if (!getEntryInfo(vpath, is_dir, file_count, file_size)) return;
 
-        dialog_box = lv_obj_create(screen);
-        lv_obj_add_flag(dialog_box, LV_OBJ_FLAG_FLOATING);
-        lv_obj_add_flag(dialog_box, LV_OBJ_FLAG_IGNORE_LAYOUT);
-        lv_obj_set_width(dialog_box, 198);
-        lv_obj_set_height(dialog_box, LV_SIZE_CONTENT);
-        lv_obj_center(dialog_box);
-        lv_obj_set_style_bg_color(dialog_box, lv_color_hex(0x000000), 0);
-        lv_obj_set_style_border_color(dialog_box, lv_color_hex(0x505050), 0);
-        lv_obj_set_style_pad_all(dialog_box, 6, 0);
-        lv_obj_set_style_pad_row(dialog_box, 4, 0);
-        lv_obj_set_flex_flow(dialog_box, LV_FLEX_FLOW_COLUMN);
-        lv_obj_clear_flag(dialog_box, LV_OBJ_FLAG_SCROLLABLE);
-
-        lv_obj_t* title = lv_label_create(dialog_box);
-        lv_label_set_text(title, "Info");
-        lv_obj_set_style_text_font(title, FontManager::textFont(), 0);
-        lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
+        dialog_box = makeDialogBox(198);
+        addDialogTitle(dialog_box, "Info");
 
         char info[256];
         if (is_dir) {
@@ -1875,35 +1786,8 @@ private:
             );
         }
 
-        lv_obj_t* txt = lv_label_create(dialog_box);
-        lv_label_set_text(txt, info);
-        lv_label_set_long_mode(txt, LV_LABEL_LONG_WRAP);
-        lv_obj_set_width(txt, lv_pct(100));
-        lv_obj_set_style_text_font(txt, FontManager::textFont(), 0);
-        lv_obj_set_style_text_color(txt, lv_color_hex(0xD0E6FF), 0);
-
-        lv_obj_t* row = lv_obj_create(dialog_box);
-        lv_obj_remove_style_all(row);
-        lv_obj_set_width(row, lv_pct(100));
-        lv_obj_set_height(row, 36);
-        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_bg_color(row, lv_color_hex(0x000000), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(row, LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_border_width(row, 0, LV_PART_MAIN);
-        lv_obj_set_style_pad_left(row, 2, LV_PART_MAIN);
-        lv_obj_set_style_pad_right(row, 2, LV_PART_MAIN);
-        lv_obj_set_style_pad_top(row, 1, LV_PART_MAIN);
-        lv_obj_set_style_pad_bottom(row, 1, LV_PART_MAIN);
-        lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-
-        lv_obj_t* ok = lv_button_create(row);
-        lv_obj_set_size(ok, 56, 28);
-        styleActionButton(ok);
-        lv_obj_add_event_cb(ok, dialog_cancel_event_cb, LV_EVENT_CLICKED, this);
-        lv_obj_t* ok_lbl = lv_label_create(ok);
-        lv_label_set_text(ok_lbl, "OK");
-        lv_obj_center(ok_lbl);
+        addDialogInfoText(dialog_box, info, FontManager::textFont());
+        addDialogOkRow(dialog_box);
     }
 
     void openLargeFileWarnDialog(const String& vpath, size_t file_size) {
@@ -1911,64 +1795,16 @@ private:
         closeDialog();
         pending_open_vpath = vpath;
 
-        dialog_box = lv_obj_create(screen);
-        lv_obj_add_flag(dialog_box, LV_OBJ_FLAG_FLOATING);
-        lv_obj_add_flag(dialog_box, LV_OBJ_FLAG_IGNORE_LAYOUT);
-        lv_obj_set_width(dialog_box, 198);
-        lv_obj_set_height(dialog_box, LV_SIZE_CONTENT);
-        lv_obj_center(dialog_box);
-        lv_obj_set_style_bg_color(dialog_box, lv_color_hex(0x000000), 0);
-        lv_obj_set_style_border_color(dialog_box, lv_color_hex(0x505050), 0);
-        lv_obj_set_style_pad_all(dialog_box, 6, 0);
-        lv_obj_set_style_pad_row(dialog_box, 4, 0);
-        lv_obj_set_flex_flow(dialog_box, LV_FLEX_FLOW_COLUMN);
-        lv_obj_clear_flag(dialog_box, LV_OBJ_FLAG_SCROLLABLE);
-
-        lv_obj_t* title = lv_label_create(dialog_box);
-        lv_label_set_text(title, "Large file warning");
-        lv_obj_set_style_text_font(title, FontManager::textFont(), 0);
-        lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
+        dialog_box = makeDialogBox(198);
+        addDialogTitle(dialog_box, "Large file warning");
 
         char msg[128];
         lv_snprintf(msg, sizeof(msg), "File size: %u KB\nOpen anyway?", (unsigned)(file_size / 1024));
-        lv_obj_t* txt = lv_label_create(dialog_box);
-        lv_label_set_text(txt, msg);
-        lv_label_set_long_mode(txt, LV_LABEL_LONG_WRAP);
-        lv_obj_set_width(txt, lv_pct(100));
-        lv_obj_set_style_text_font(txt, FontManager::iconFont(), 0);
-        lv_obj_set_style_text_color(txt, lv_color_hex(0xD0E6FF), 0);
+        addDialogInfoText(dialog_box, msg, FontManager::iconFont());
 
-        lv_obj_t* row = lv_obj_create(dialog_box);
-        lv_obj_remove_style_all(row);
-        lv_obj_set_width(row, lv_pct(100));
-        lv_obj_set_height(row, 36);
-        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_bg_color(row, lv_color_hex(0x000000), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(row, LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_border_width(row, 0, LV_PART_MAIN);
-        lv_obj_set_style_pad_left(row, 2, LV_PART_MAIN);
-        lv_obj_set_style_pad_right(row, 2, LV_PART_MAIN);
-        lv_obj_set_style_pad_top(row, 1, LV_PART_MAIN);
-        lv_obj_set_style_pad_bottom(row, 1, LV_PART_MAIN);
-        lv_obj_set_style_pad_column(row, 6, LV_PART_MAIN);
-        lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-
-        lv_obj_t* cancel_btn = lv_button_create(row);
-        lv_obj_set_size(cancel_btn, 62, 28);
-        styleActionButton(cancel_btn);
-        lv_obj_add_event_cb(cancel_btn, dialog_cancel_event_cb, LV_EVENT_CLICKED, this);
-        lv_obj_t* cancel_lbl = lv_label_create(cancel_btn);
-        lv_label_set_text(cancel_lbl, "Cancel");
-        lv_obj_center(cancel_lbl);
-
-        lv_obj_t* open_btn = lv_button_create(row);
-        lv_obj_set_size(open_btn, 56, 28);
-        styleActionButton(open_btn);
-        lv_obj_add_event_cb(open_btn, large_open_confirm_event_cb, LV_EVENT_CLICKED, this);
-        lv_obj_t* open_lbl = lv_label_create(open_btn);
-        lv_label_set_text(open_lbl, "Open");
-        lv_obj_center(open_lbl);
+        lv_obj_t* row = makeDialogButtonRow(dialog_box, 36, 1, 6);
+        makeDialogButton(row, "Cancel", 62, 28, dialog_cancel_event_cb);
+        makeDialogButton(row, "Open", 56, 28, large_open_confirm_event_cb);
     }
 
     void updateNewTypeButtons() {
@@ -2785,76 +2621,21 @@ private:
         uint32_t dir_cnt = 0;
         countMarkedEntries(file_cnt, dir_cnt);
 
-        dialog_box = lv_obj_create(screen);
-        lv_obj_add_flag(dialog_box, LV_OBJ_FLAG_FLOATING);
-        lv_obj_add_flag(dialog_box, LV_OBJ_FLAG_IGNORE_LAYOUT);
-        lv_obj_set_width(dialog_box, 206);
-        lv_obj_set_height(dialog_box, LV_SIZE_CONTENT);
-        lv_obj_center(dialog_box);
-        lv_obj_set_style_bg_color(dialog_box, lv_color_hex(0x000000), 0);
-        lv_obj_set_style_border_color(dialog_box, lv_color_hex(0x505050), 0);
-        lv_obj_set_style_pad_all(dialog_box, 6, 0);
-        lv_obj_set_style_pad_row(dialog_box, 4, 0);
-        lv_obj_set_flex_flow(dialog_box, LV_FLEX_FLOW_COLUMN);
-        lv_obj_clear_flag(dialog_box, LV_OBJ_FLAG_SCROLLABLE);
+        dialog_box = makeDialogBox(206);
+        addDialogTitle(dialog_box, "Delete selected");
 
-        lv_obj_t* title = lv_label_create(dialog_box);
-        lv_label_set_text(title, "Delete selected");
-        lv_obj_set_style_text_font(title, FontManager::textFont(), 0);
-        lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
-
-        lv_obj_t* txt = lv_label_create(dialog_box);
         char msg[192];
         lv_snprintf(
             msg, sizeof(msg),
             "Selected: %u files, %u dirs\nNormal: non-empty folders fail.\nForce: recursive delete.",
             (unsigned)file_cnt, (unsigned)dir_cnt
         );
-        lv_label_set_text(txt, msg);
-        lv_label_set_long_mode(txt, LV_LABEL_LONG_WRAP);
-        lv_obj_set_width(txt, lv_pct(100));
-        lv_obj_set_style_text_font(txt, FontManager::iconFont(), 0);
-        lv_obj_set_style_text_color(txt, lv_color_hex(0xD0E6FF), 0);
+        addDialogInfoText(dialog_box, msg, FontManager::iconFont());
 
-        lv_obj_t* row = lv_obj_create(dialog_box);
-        lv_obj_remove_style_all(row);
-        lv_obj_set_width(row, lv_pct(100));
-        lv_obj_set_height(row, 36);
-        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_bg_color(row, lv_color_hex(0x000000), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(row, LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_border_width(row, 0, LV_PART_MAIN);
-        lv_obj_set_style_pad_left(row, 2, LV_PART_MAIN);
-        lv_obj_set_style_pad_right(row, 2, LV_PART_MAIN);
-        lv_obj_set_style_pad_top(row, 1, LV_PART_MAIN);
-        lv_obj_set_style_pad_bottom(row, 1, LV_PART_MAIN);
-        lv_obj_set_style_pad_column(row, 4, LV_PART_MAIN);
-        lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-
-        lv_obj_t* cancel_btn = lv_button_create(row);
-        lv_obj_set_size(cancel_btn, 60, 28);
-        styleActionButton(cancel_btn);
-        lv_obj_add_event_cb(cancel_btn, dialog_cancel_event_cb, LV_EVENT_CLICKED, this);
-        lv_obj_t* cancel_lbl = lv_label_create(cancel_btn);
-        lv_label_set_text(cancel_lbl, "Cancel");
-        lv_obj_center(cancel_lbl);
-
-        lv_obj_t* normal_btn = lv_button_create(row);
-        lv_obj_set_size(normal_btn, 60, 28);
-        styleActionButton(normal_btn);
-        lv_obj_add_event_cb(normal_btn, remove_normal_event_cb, LV_EVENT_CLICKED, this);
-        lv_obj_t* normal_lbl = lv_label_create(normal_btn);
-        lv_label_set_text(normal_lbl, "Normal");
-        lv_obj_center(normal_lbl);
-
-        lv_obj_t* force_btn = lv_button_create(row);
-        lv_obj_set_size(force_btn, 52, 28);
-        styleActionButton(force_btn);
-        lv_obj_add_event_cb(force_btn, remove_force_event_cb, LV_EVENT_CLICKED, this);
-        lv_obj_t* force_lbl = lv_label_create(force_btn);
-        lv_label_set_text(force_lbl, "Force");
-        lv_obj_center(force_lbl);
+        lv_obj_t* row = makeDialogButtonRow(dialog_box, 36, 1, 4);
+        makeDialogButton(row, "Cancel", 60, 28, dialog_cancel_event_cb);
+        makeDialogButton(row, "Normal", 60, 28, remove_normal_event_cb);
+        makeDialogButton(row, "Force", 52, 28, remove_force_event_cb);
     }
 
     bool renamePath(const String& from_vpath, const String& to_vpath) {

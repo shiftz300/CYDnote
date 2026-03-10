@@ -10,69 +10,68 @@
 
 class Editor {
 private:
-    static constexpr int32_t SCREEN_TRANSITION_MS = 55;
+    static constexpr int32_t SCREEN_TRANSITION_MS = 80;
     static constexpr int32_t IME_ANIM_TIME_MS = 90;
     static constexpr int32_t EDITOR_TEXT_SIZE_PX = 14;
+    static constexpr int32_t TEXTAREA_SCROLL_ANIM_MS = 180;
+    static constexpr uint16_t CURSOR_BLINK_PERIOD_MS = 800;
+    static constexpr uint16_t CURSOR_BLINK_TICK_MS = 24;
+    static constexpr uint16_t INPUT_ACTIVE_HOLD_MS = 220;
+    static constexpr lv_opa_t CURSOR_BLINK_MIN_OPA = LV_OPA_0;
+    static constexpr lv_opa_t CURSOR_BLINK_MAX_OPA = LV_OPA_80;
+    static constexpr int32_t LAZY_LOAD_EDGE_PX = 36;
+    static constexpr uint16_t LAZY_SCROLL_GUARD_MS = 140;
+    static constexpr int32_t LAZY_EDGE_UNLOCK_PX = 108;
+    static constexpr int32_t CURSOR_HEIGHT_PX = 9;
     static constexpr int32_t IME_CANDIDATE_H = 28;
     static constexpr int32_t IME_KEYBOARD_H = 132;
     static constexpr int32_t IME_TOTAL_H_FALLBACK = IME_CANDIDATE_H + IME_KEYBOARD_H;
-    static constexpr uint8_t IME_PROXY_CAND_MAX = 20;
-    static constexpr uint8_t IME_CAND_PER_PAGE = 8;
-    static constexpr uint16_t IME_CAND_MAX = 160;
-    static constexpr size_t LARGE_DOC_PERF_THRESHOLD = 48 * 1024;
-    static constexpr int32_t CHUNK_NAV_BTN_SIZE = 24;
-    static constexpr int32_t CHUNK_NAV_EDGE_THRESHOLD = 6;
+    static constexpr size_t LARGE_DOC_PERF_THRESHOLD = 2 * 1024;
     lv_obj_t* screen;
     lv_obj_t* textarea;
     lv_obj_t* ime;
     lv_obj_t* keyboard;
     lv_obj_t* ime_container;
-    lv_obj_t* ime_cand_proxy;
-    lv_obj_t* ime_cand_src;
     lv_obj_t* ime_btn;
     lv_obj_t* title_wrap;
     lv_obj_t* title_label;
     lv_obj_t* top_btn;
-    lv_obj_t* save_btn;
-    lv_obj_t* read_prev_btn;
-    lv_obj_t* read_next_btn;
     lv_obj_t* save_popup;
     lv_timer_t* save_popup_timer;
-    char ime_cand_texts[IME_PROXY_CAND_MAX][8];
-    const char* ime_cand_map[IME_PROXY_CAND_MAX + 1];
-    uint8_t ime_cand_src_idx[IME_PROXY_CAND_MAX];
-    bool ime_cand_syncing;
-    char ime_compose[16];
-    bool ime_is_k9_mode;
-    uint16_t ime_cand_count;
-    uint16_t ime_cand_page;
-    char ime_cands[IME_CAND_MAX][8];
+    lv_timer_t* cursor_blink_timer;
     bool ime_visible;
     bool large_doc_mode;
-    bool read_chunk_mode;
-    bool read_chunk_has_prev;
-    bool read_chunk_has_next;
     bool ime_font_acquired;
+    bool input_active;
+    bool input_scroll_optimized;
+    uint32_t input_last_ms;
+    bool cursor_blink_rising;
+    uint16_t cursor_blink_phase_ms;
+    lv_opa_t cursor_last_opa;
     uint32_t ime_cursor_anchor_pos;
     bool ime_cursor_anchor_valid;
+    bool lazy_load_active;
+    bool lazy_load_busy;
+    uint32_t lazy_scroll_guard_start_ms;
+    bool lazy_block_up_trigger;
+    bool lazy_block_down_trigger;
+    lv_coord_t lazy_last_scroll_top;
+    int8_t lazy_scroll_dir_hint;
+    size_t lazy_loaded_start;
+    size_t lazy_loaded_end;
+    size_t lazy_total_len;
     String current_file;
     std::function<void()> on_exit_cb;
     std::function<void()> on_save_cb;
-    std::function<void()> on_read_prev_chunk_cb;
-    std::function<void()> on_read_next_chunk_cb;
+    std::function<void(int)> on_lazy_load_cb;
 
 public:
     Editor() : screen(nullptr), textarea(nullptr), ime(nullptr),
-               keyboard(nullptr), ime_container(nullptr), ime_cand_proxy(nullptr), ime_cand_src(nullptr), ime_btn(nullptr), title_wrap(nullptr), title_label(nullptr), top_btn(nullptr), save_btn(nullptr), read_prev_btn(nullptr), read_next_btn(nullptr),
-               save_popup(nullptr), save_popup_timer(nullptr),
-               ime_cand_syncing(false), ime_is_k9_mode(false), ime_cand_count(0), ime_cand_page(0),
-               ime_visible(false), large_doc_mode(false), read_chunk_mode(false), read_chunk_has_prev(false), read_chunk_has_next(false), ime_font_acquired(false), ime_cursor_anchor_pos(0), ime_cursor_anchor_valid(false),
-               current_file(""), on_exit_cb(nullptr), on_save_cb(nullptr), on_read_prev_chunk_cb(nullptr), on_read_next_chunk_cb(nullptr) {
-        memset(ime_compose, 0, sizeof(ime_compose));
-        memset(ime_cands, 0, sizeof(ime_cands));
-        memset(ime_cand_texts, 0, sizeof(ime_cand_texts));
-        memset(ime_cand_map, 0, sizeof(ime_cand_map));
-        memset(ime_cand_src_idx, 0xFF, sizeof(ime_cand_src_idx));
+               keyboard(nullptr), ime_container(nullptr), ime_btn(nullptr), title_wrap(nullptr), title_label(nullptr), top_btn(nullptr),
+               save_popup(nullptr), save_popup_timer(nullptr), cursor_blink_timer(nullptr),
+               ime_visible(false), large_doc_mode(false), ime_font_acquired(false), input_active(false), input_scroll_optimized(false), input_last_ms(0), cursor_blink_rising(false), cursor_blink_phase_ms(0), cursor_last_opa(CURSOR_BLINK_MAX_OPA), ime_cursor_anchor_pos(0), ime_cursor_anchor_valid(false),
+                         lazy_load_active(false), lazy_load_busy(false), lazy_scroll_guard_start_ms(0), lazy_block_up_trigger(false), lazy_block_down_trigger(false), lazy_last_scroll_top(0), lazy_scroll_dir_hint(0), lazy_loaded_start(0), lazy_loaded_end(0), lazy_total_len(0),
+             current_file(""), on_exit_cb(nullptr), on_save_cb(nullptr), on_lazy_load_cb(nullptr) {
     }
 
     void create(std::function<void()> on_exit = nullptr, std::function<void()> on_save = nullptr) {
@@ -160,7 +159,7 @@ public:
         lv_obj_set_style_text_color(top_label, lv_color_hex(0xFFFFFF), 0);
         lv_obj_center(top_label);
 
-        save_btn = lv_btn_create(right_wrap);
+        lv_obj_t* save_btn = lv_btn_create(right_wrap);
         lv_obj_set_size(save_btn, 28, 26);
         styleActionButton(save_btn);
         lv_obj_add_event_cb(save_btn, save_btn_event_cb, LV_EVENT_CLICKED, this);
@@ -185,6 +184,7 @@ public:
         lv_obj_set_flex_grow(textarea, 1);
         lv_textarea_set_one_line(textarea, false);
         lv_textarea_set_cursor_click_pos(textarea, true);
+        lv_textarea_set_text_selection(textarea, false);
         lv_obj_set_style_bg_color(textarea, lv_color_hex(0x000000), 0);
         lv_obj_set_style_border_color(textarea, lv_color_hex(0x303030), 0);
         lv_obj_set_style_text_color(textarea, lv_color_hex(0xFFFFFF), 0);
@@ -194,52 +194,26 @@ public:
         lv_obj_set_style_text_font(textarea, FontManager::textFont(), 0);
         lv_obj_set_style_text_line_space(textarea, -4, 0);
         lv_obj_set_style_bg_color(textarea, lv_color_hex(0xFFFFFF), LV_PART_CURSOR);
-        lv_obj_set_style_bg_opa(textarea, LV_OPA_70, LV_PART_CURSOR);
+        lv_obj_set_style_bg_opa(textarea, CURSOR_BLINK_MAX_OPA, LV_PART_CURSOR);
+        lv_obj_set_style_anim_duration(textarea, 0, LV_PART_CURSOR);
+        lv_obj_set_style_anim_duration(textarea, 0, LV_PART_CURSOR | LV_STATE_DEFAULT);
+        lv_obj_set_style_anim_duration(textarea, 0, LV_PART_CURSOR | LV_STATE_FOCUSED);
+        lv_obj_set_style_anim_duration(textarea, 0, LV_PART_CURSOR | LV_STATE_PRESSED);
         lv_obj_set_style_width(textarea, 1, LV_PART_CURSOR);
         lv_obj_add_flag(textarea, LV_OBJ_FLAG_SCROLL_ELASTIC);
         lv_obj_add_flag(textarea, LV_OBJ_FLAG_SCROLL_MOMENTUM);
-        lv_obj_set_style_anim_duration(textarea, 260, 0);
-        int32_t editor_cursor_h = EDITOR_TEXT_SIZE_PX;
-        if (editor_cursor_h < 4) editor_cursor_h = 4;
+        lv_obj_set_style_anim_duration(textarea, TEXTAREA_SCROLL_ANIM_MS, 0);
+        int32_t editor_cursor_h = CURSOR_HEIGHT_PX;
+        if (editor_cursor_h < 2) editor_cursor_h = 2;
         lv_obj_set_style_height(textarea, editor_cursor_h, LV_PART_CURSOR);
         lv_obj_add_event_cb(textarea, textarea_cursor_anchor_event_cb, LV_EVENT_CLICKED, this);
-        lv_obj_add_event_cb(textarea, textarea_cursor_anchor_event_cb, LV_EVENT_VALUE_CHANGED, this);
-        lv_obj_add_event_cb(textarea, textarea_scroll_event_cb, LV_EVENT_SCROLL, this);
-        lv_obj_add_event_cb(textarea, textarea_scroll_event_cb, LV_EVENT_SCROLL_END, this);
+        lv_obj_add_event_cb(textarea, textarea_lazy_scroll_track_event_cb, LV_EVENT_SCROLL, this);
+        lv_obj_add_event_cb(textarea, textarea_lazy_scroll_event_cb, LV_EVENT_SCROLL_END, this);
+        lazy_last_scroll_top = lv_obj_get_scroll_top(textarea);
+        lazy_scroll_dir_hint = 0;
         ime_cursor_anchor_pos = lv_textarea_get_cursor_pos(textarea);
         ime_cursor_anchor_valid = true;
-
-        read_prev_btn = lv_btn_create(screen);
-        lv_obj_add_flag(read_prev_btn, LV_OBJ_FLAG_FLOATING);
-        lv_obj_add_flag(read_prev_btn, LV_OBJ_FLAG_IGNORE_LAYOUT);
-        lv_obj_set_size(read_prev_btn, CHUNK_NAV_BTN_SIZE, CHUNK_NAV_BTN_SIZE);
-        styleActionButton(read_prev_btn);
-        lv_obj_set_style_bg_opa(read_prev_btn, LV_OPA_75, LV_STATE_DEFAULT);
-        lv_obj_align(read_prev_btn, LV_ALIGN_TOP_RIGHT, -6, 42);
-        lv_obj_add_event_cb(read_prev_btn, read_prev_btn_event_cb, LV_EVENT_CLICKED, this);
-        lv_obj_t* prev_label = lv_label_create(read_prev_btn);
-        lv_label_set_text(prev_label, LV_SYMBOL_LEFT);
-        lv_obj_set_style_text_font(prev_label, FontManager::iconFont(), 0);
-        lv_obj_set_style_text_color(prev_label, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_center(prev_label);
-        lv_obj_move_foreground(read_prev_btn);
-        lv_obj_add_flag(read_prev_btn, LV_OBJ_FLAG_HIDDEN);
-
-        read_next_btn = lv_btn_create(screen);
-        lv_obj_add_flag(read_next_btn, LV_OBJ_FLAG_FLOATING);
-        lv_obj_add_flag(read_next_btn, LV_OBJ_FLAG_IGNORE_LAYOUT);
-        lv_obj_set_size(read_next_btn, CHUNK_NAV_BTN_SIZE, CHUNK_NAV_BTN_SIZE);
-        styleActionButton(read_next_btn);
-        lv_obj_set_style_bg_opa(read_next_btn, LV_OPA_75, LV_STATE_DEFAULT);
-        lv_obj_align(read_next_btn, LV_ALIGN_BOTTOM_RIGHT, -6, -6);
-        lv_obj_add_event_cb(read_next_btn, read_next_btn_event_cb, LV_EVENT_CLICKED, this);
-        lv_obj_t* next_label = lv_label_create(read_next_btn);
-        lv_label_set_text(next_label, LV_SYMBOL_RIGHT);
-        lv_obj_set_style_text_font(next_label, FontManager::iconFont(), 0);
-        lv_obj_set_style_text_color(next_label, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_center(next_label);
-        lv_obj_move_foreground(read_next_btn);
-        lv_obj_add_flag(read_next_btn, LV_OBJ_FLAG_HIDDEN);
+        cursor_blink_timer = lv_timer_create(cursor_blink_timer_cb, CURSOR_BLINK_TICK_MS, this);
 
         ime_container = lv_obj_create(screen);
         lv_obj_set_width(ime_container, lv_pct(100));
@@ -289,6 +263,8 @@ public:
         lv_obj_set_style_text_font(keyboard, FontManager::imeFont(), LV_PART_MAIN);
         lv_obj_set_style_text_font(keyboard, FontManager::imeFont(), LV_PART_ITEMS);
         lv_keyboard_set_textarea(keyboard, textarea);
+        lv_obj_add_event_cb(keyboard, keyboard_input_activity_event_cb, LV_EVENT_VALUE_CHANGED, this);
+        lv_obj_add_event_cb(keyboard, keyboard_ready_newline_event_cb, LV_EVENT_READY, this);
         static const char * k9_map[] = {
             "2", "3", "4", "\n",
             "5", "6", "7", "\n",
@@ -326,6 +302,10 @@ public:
 
     void destroy() {
         closeSavePopup();
+        if (cursor_blink_timer) {
+            lv_timer_del(cursor_blink_timer);
+            cursor_blink_timer = nullptr;
+        }
         if (ime_font_acquired) {
             FontManager::releaseIMEFont();
             ime_font_acquired = false;
@@ -337,15 +317,10 @@ public:
             ime = nullptr;
             keyboard = nullptr;
             ime_container = nullptr;
-            ime_cand_proxy = nullptr;
-            ime_cand_src = nullptr;
             ime_btn = nullptr;
             title_wrap = nullptr;
             title_label = nullptr;
             top_btn = nullptr;
-            save_btn = nullptr;
-            read_prev_btn = nullptr;
-            read_next_btn = nullptr;
         }
     }
 
@@ -357,7 +332,6 @@ public:
     }
 
     void toggleIME() {
-        if (read_chunk_mode) return;
         setIMEVisible(!ime_visible);
     }
 
@@ -367,46 +341,79 @@ public:
 
     void setText(const String& content) {
         if (!textarea) return;
+        setLazyLoadState(false, 0, content.length(), content.length());
         applyLargeDocPerfMode(content.length());
         lv_textarea_set_text(textarea, content.c_str());
         moveCursorAndViewToStart();
-        refreshReadChunkButtons();
     }
 
-    void setReadChunkMode(bool enabled) {
-        read_chunk_mode = enabled;
-        if (textarea) {
-            bool interactive = !read_chunk_mode && !large_doc_mode;
-            lv_textarea_set_cursor_click_pos(textarea, interactive);
-            lv_textarea_set_text_selection(textarea, interactive);
-            lv_obj_set_style_bg_opa(textarea, read_chunk_mode ? LV_OPA_TRANSP : LV_OPA_70, LV_PART_CURSOR);
-        }
-        if (read_chunk_mode && ime_visible) setIMEVisible(false);
-        refreshReadChunkButtons();
-    }
-
-    bool isReadChunkMode() const {
-        return read_chunk_mode;
-    }
-
-    void setReadChunkNavigationCallbacks(std::function<void()> on_prev_chunk, std::function<void()> on_next_chunk) {
-        on_read_prev_chunk_cb = on_prev_chunk;
-        on_read_next_chunk_cb = on_next_chunk;
-    }
-
-    void setReadChunkNavigationState(bool has_prev, bool has_next) {
-        read_chunk_has_prev = has_prev;
-        read_chunk_has_next = has_next;
-        refreshReadChunkButtons();
-    }
-
-    void setReadChunkText(const String& content, bool anchor_end) {
+    void beginChunkedText(size_t total_len) {
         if (!textarea) return;
+        setLazyLoadState(false, 0, total_len, total_len);
+        applyLargeDocPerfMode(total_len);
+        lv_textarea_set_text(textarea, "");
+    }
+
+    void appendChunkedText(const char* text) {
+        if (!textarea || !text || text[0] == '\0') return;
+        lv_textarea_add_text(textarea, text);
+    }
+
+    void endChunkedText() {
+        if (!textarea) return;
+        moveCursorAndViewToStart();
+    }
+
+    void setLazyLoadCallback(std::function<void(int)> cb) {
+        on_lazy_load_cb = cb;
+    }
+
+    void setLazyLoadState(bool active, size_t window_start, size_t window_end, size_t total_len) {
+        lazy_load_active = active;
+        lazy_load_busy = false;
+        lazy_scroll_guard_start_ms = lv_tick_get();
+        lazy_block_up_trigger = false;
+        lazy_block_down_trigger = false;
+        lazy_scroll_dir_hint = 0;
+        lazy_last_scroll_top = textarea ? lv_obj_get_scroll_top(textarea) : 0;
+        lazy_loaded_start = window_start;
+        lazy_loaded_end = window_end;
+        lazy_total_len = total_len;
+    }
+
+    bool isLazyLoadActive() const {
+        return lazy_load_active;
+    }
+
+    void cancelLazyLoadRequest() {
+        lazy_load_busy = false;
+    }
+
+    void setLazyWindowText(const String& content, size_t window_start, size_t window_end, size_t total_len, bool stick_to_bottom) {
+        if (!textarea) return;
+        lazy_load_active = true;
+        lazy_load_busy = false;
+        lazy_scroll_guard_start_ms = lv_tick_get();
+        // Lock opposite edge trigger after programmatic window switch to avoid
+        // immediate bounce back to previous section.
+        lazy_block_up_trigger = !stick_to_bottom;
+        lazy_block_down_trigger = stick_to_bottom;
+        lazy_scroll_dir_hint = 0;
+        lazy_loaded_start = window_start;
+        lazy_loaded_end = window_end;
+        lazy_total_len = total_len;
         applyLargeDocPerfMode(content.length());
         lv_textarea_set_text(textarea, content.c_str());
-        if (anchor_end) moveCursorAndViewToEnd();
-        else moveCursorAndViewToStart();
-        refreshReadChunkButtons();
+        lazy_last_scroll_top = lv_obj_get_scroll_top(textarea);
+
+        if (stick_to_bottom) {
+            lv_textarea_set_cursor_pos(textarea, LV_TEXTAREA_CURSOR_LAST);
+            ime_cursor_anchor_pos = (uint32_t)lv_textarea_get_cursor_pos(textarea);
+            ime_cursor_anchor_valid = true;
+            lv_async_call(async_scroll_bottom_cb, this);
+        } else {
+            moveCursorAndViewToStart();
+        }
     }
 
     String getText() {
@@ -476,11 +483,9 @@ private:
         if (want_large_mode == large_doc_mode) return;
         large_doc_mode = want_large_mode;
 
-        // Large doc: reduce expensive cursor hit-test/update path during scroll.
-        if (!read_chunk_mode) {
-            lv_textarea_set_cursor_click_pos(textarea, !large_doc_mode);
-            lv_textarea_set_text_selection(textarea, !large_doc_mode);
-        }
+        // Keep click-to-move cursor and keep text selection disabled.
+        lv_textarea_set_cursor_click_pos(textarea, true);
+        lv_textarea_set_text_selection(textarea, false);
     }
 
     void closeSavePopup() {
@@ -501,6 +506,76 @@ private:
         ed->closeSavePopup();
     }
 
+    static void cursor_blink_timer_cb(lv_timer_t* t) {
+        if (!t) return;
+        Editor* ed = (Editor*)lv_timer_get_user_data(t);
+        if (!ed || !ed->textarea || !ed->screen) return;
+        if (lv_screen_active() != ed->screen) return;
+
+        if (ed->input_active) {
+            if (lv_tick_elaps(ed->input_last_ms) < INPUT_ACTIVE_HOLD_MS) {
+                return;
+            }
+            ed->input_active = false;
+            ed->setInputScrollOptimization(false);
+        }
+
+        const uint16_t half = CURSOR_BLINK_PERIOD_MS / 2;
+        if (half == 0) return;
+
+        if (ed->cursor_blink_rising) {
+            uint16_t next_phase = ed->cursor_blink_phase_ms + CURSOR_BLINK_TICK_MS;
+            if (next_phase >= half) {
+                ed->cursor_blink_phase_ms = half;
+                ed->cursor_blink_rising = false;
+            } else {
+                ed->cursor_blink_phase_ms = next_phase;
+            }
+        } else {
+            if (ed->cursor_blink_phase_ms <= CURSOR_BLINK_TICK_MS) {
+                ed->cursor_blink_phase_ms = 0;
+                ed->cursor_blink_rising = true;
+            } else {
+                ed->cursor_blink_phase_ms -= CURSOR_BLINK_TICK_MS;
+            }
+        }
+
+        uint16_t span = (uint16_t)(CURSOR_BLINK_MAX_OPA - CURSOR_BLINK_MIN_OPA);
+        lv_opa_t opa = (lv_opa_t)(CURSOR_BLINK_MIN_OPA + (uint32_t)span * ed->cursor_blink_phase_ms / half);
+        if (opa == ed->cursor_last_opa) return;
+        ed->cursor_last_opa = opa;
+        lv_obj_set_style_bg_opa(ed->textarea, opa, LV_PART_CURSOR);
+    }
+
+    void markInputActive() {
+        input_active = true;
+        input_last_ms = lv_tick_get();
+        setInputScrollOptimization(true);
+        if (!textarea) return;
+        if (cursor_last_opa != CURSOR_BLINK_MAX_OPA) {
+            cursor_last_opa = CURSOR_BLINK_MAX_OPA;
+            lv_obj_set_style_bg_opa(textarea, CURSOR_BLINK_MAX_OPA, LV_PART_CURSOR);
+        }
+    }
+
+    void setInputScrollOptimization(bool active) {
+        if (!textarea) return;
+        if (active) {
+            if (input_scroll_optimized) return;
+            lv_obj_clear_flag(textarea, LV_OBJ_FLAG_SCROLL_ELASTIC);
+            lv_obj_clear_flag(textarea, LV_OBJ_FLAG_SCROLL_MOMENTUM);
+            lv_obj_set_style_anim_duration(textarea, 0, 0);
+            input_scroll_optimized = true;
+            return;
+        }
+
+        if (!input_scroll_optimized) return;
+        lv_obj_add_flag(textarea, LV_OBJ_FLAG_SCROLL_ELASTIC);
+        lv_obj_add_flag(textarea, LV_OBJ_FLAG_SCROLL_MOMENTUM);
+        lv_obj_set_style_anim_duration(textarea, TEXTAREA_SCROLL_ANIM_MS, 0);
+        input_scroll_optimized = false;
+    }
+
     void styleActionButton(lv_obj_t* btn) {
         lv_obj_set_style_radius(btn, 4, 0);
         lv_obj_set_style_bg_color(btn, lv_color_hex(0x1E1E1E), LV_STATE_DEFAULT);
@@ -511,27 +586,6 @@ private:
         lv_obj_set_style_border_color(btn, lv_color_hex(0x8ED1FF), LV_STATE_FOCUSED);
         lv_obj_set_style_text_color(btn, lv_color_hex(0xFFFFFF), 0);
         lv_obj_set_style_shadow_width(btn, 0, 0);
-    }
-
-    void refreshReadChunkButtons() {
-        updateReadChunkButtonVisibility(read_prev_btn, read_chunk_mode && read_chunk_has_prev && isNearTopEdge());
-        updateReadChunkButtonVisibility(read_next_btn, read_chunk_mode && read_chunk_has_next && isNearBottomEdge());
-    }
-
-    void updateReadChunkButtonVisibility(lv_obj_t* btn, bool visible) {
-        if (!btn) return;
-        if (visible) lv_obj_clear_flag(btn, LV_OBJ_FLAG_HIDDEN);
-        else lv_obj_add_flag(btn, LV_OBJ_FLAG_HIDDEN);
-    }
-
-    bool isNearTopEdge() const {
-        if (!textarea) return false;
-        return lv_obj_get_scroll_top(textarea) <= CHUNK_NAV_EDGE_THRESHOLD;
-    }
-
-    bool isNearBottomEdge() const {
-        if (!textarea) return false;
-        return lv_obj_get_scroll_bottom(textarea) <= CHUNK_NAV_EDGE_THRESHOLD;
     }
 
     void setIMEVisible(bool visible) {
@@ -611,15 +665,57 @@ private:
     static void textarea_cursor_anchor_event_cb(lv_event_t* e) {
         Editor* ed = (Editor*)lv_event_get_user_data(e);
         if (!ed || !ed->textarea) return;
-        if (ed->read_chunk_mode) return;
         ed->ime_cursor_anchor_pos = lv_textarea_get_cursor_pos(ed->textarea);
         ed->ime_cursor_anchor_valid = true;
     }
 
-    static void textarea_scroll_event_cb(lv_event_t* e) {
+    void triggerLazyLoadIfNeeded(int8_t preferred_dir) {
+        if (!textarea || !lazy_load_active || lazy_load_busy || !on_lazy_load_cb) return;
+        if (lv_tick_elaps(lazy_scroll_guard_start_ms) < LAZY_SCROLL_GUARD_MS) return;
+
+        lv_coord_t scroll_top = lv_obj_get_scroll_top(textarea);
+        lv_coord_t scroll_bottom = lv_obj_get_scroll_bottom(textarea);
+
+        if (lazy_block_up_trigger && scroll_top > LAZY_EDGE_UNLOCK_PX) {
+            lazy_block_up_trigger = false;
+        }
+        if (lazy_block_down_trigger && scroll_bottom > LAZY_EDGE_UNLOCK_PX) {
+            lazy_block_down_trigger = false;
+        }
+
+        bool can_up = !lazy_block_up_trigger && scroll_top <= LAZY_LOAD_EDGE_PX && lazy_loaded_start > 0;
+        bool can_down = !lazy_block_down_trigger && scroll_bottom <= LAZY_LOAD_EDGE_PX && lazy_loaded_end < lazy_total_len;
+        if (!can_up && !can_down) return;
+
+        int direction = 0;
+        if (can_up && scroll_top <= LAZY_LOAD_EDGE_PX) {
+            direction = -1;
+        } else if (preferred_dir < 0 && can_up) direction = -1;
+        else if (preferred_dir > 0 && can_down) direction = 1;
+        else if (can_up && can_down) direction = (scroll_top <= scroll_bottom) ? -1 : 1;
+        else direction = can_up ? -1 : 1;
+
+        lazy_load_busy = true;
+        on_lazy_load_cb(direction);
+    }
+
+    static void textarea_lazy_scroll_track_event_cb(lv_event_t* e) {
+        Editor* ed = (Editor*)lv_event_get_user_data(e);
+        if (!ed || !ed->textarea || !ed->lazy_load_active) return;
+
+        lv_coord_t scroll_top = lv_obj_get_scroll_top(ed->textarea);
+        lv_coord_t delta = scroll_top - ed->lazy_last_scroll_top;
+        if (delta <= -2) ed->lazy_scroll_dir_hint = -1;
+        else if (delta >= 2) ed->lazy_scroll_dir_hint = 1;
+        ed->lazy_last_scroll_top = scroll_top;
+
+        ed->triggerLazyLoadIfNeeded(ed->lazy_scroll_dir_hint);
+    }
+
+    static void textarea_lazy_scroll_event_cb(lv_event_t* e) {
         Editor* ed = (Editor*)lv_event_get_user_data(e);
         if (!ed) return;
-        ed->refreshReadChunkButtons();
+        ed->triggerLazyLoadIfNeeded(ed->lazy_scroll_dir_hint);
     }
 
     static void exit_btn_event_cb(lv_event_t* e) {
@@ -638,38 +734,39 @@ private:
         }
     }
 
+    static void keyboard_ready_newline_event_cb(lv_event_t* e) {
+        Editor* ed = (Editor*)lv_event_get_user_data(e);
+        if (!ed || !ed->textarea) return;
+        ed->markInputActive();
+        if (lv_textarea_get_one_line(ed->textarea)) return;
+
+        lv_textarea_add_char(ed->textarea, '\n');
+        ed->ime_cursor_anchor_pos = (uint32_t)lv_textarea_get_cursor_pos(ed->textarea);
+        ed->ime_cursor_anchor_valid = true;
+    }
+
+    static void keyboard_input_activity_event_cb(lv_event_t* e) {
+        Editor* ed = (Editor*)lv_event_get_user_data(e);
+        if (!ed) return;
+        ed->markInputActive();
+    }
+
     static void top_btn_event_cb(lv_event_t* e) {
         Editor* ed = (Editor*)lv_event_get_user_data(e);
         if (!ed) return;
         ed->moveCursorAndViewToStart();
     }
 
-    static void read_prev_btn_event_cb(lv_event_t* e) {
-        Editor* ed = (Editor*)lv_event_get_user_data(e);
-        if (!ed || !ed->read_chunk_mode || !ed->read_chunk_has_prev || !ed->on_read_prev_chunk_cb) return;
-        ed->on_read_prev_chunk_cb();
-    }
-
-    static void read_next_btn_event_cb(lv_event_t* e) {
-        Editor* ed = (Editor*)lv_event_get_user_data(e);
-        if (!ed || !ed->read_chunk_mode || !ed->read_chunk_has_next || !ed->on_read_next_chunk_cb) return;
-        ed->on_read_next_chunk_cb();
-    }
-
     static void async_scroll_top_cb(void* user_data) {
         Editor* ed = (Editor*)user_data;
         if (!ed || !ed->textarea) return;
         lv_obj_scroll_to_y(ed->textarea, 0, LV_ANIM_OFF);
-        ed->refreshReadChunkButtons();
     }
 
     static void async_scroll_bottom_cb(void* user_data) {
         Editor* ed = (Editor*)user_data;
         if (!ed || !ed->textarea) return;
-        lv_obj_update_layout(ed->textarea);
-        int32_t bottom_offset = lv_obj_get_scroll_bottom(ed->textarea);
-        lv_obj_scroll_by(ed->textarea, 0, bottom_offset, LV_ANIM_OFF);
-        ed->refreshReadChunkButtons();
+        lv_textarea_set_cursor_pos(ed->textarea, LV_TEXTAREA_CURSOR_LAST);
     }
 
     void moveCursorAndViewToStart() {
@@ -679,16 +776,6 @@ private:
         ime_cursor_anchor_pos = 0;
         ime_cursor_anchor_valid = true;
         lv_async_call(async_scroll_top_cb, this);
-    }
-
-    void moveCursorAndViewToEnd() {
-        if (!textarea) return;
-        const char* text = lv_textarea_get_text(textarea);
-        uint32_t len = text ? (uint32_t)strlen(text) : 0;
-        lv_textarea_set_cursor_pos(textarea, (int32_t)len);
-        ime_cursor_anchor_pos = len;
-        ime_cursor_anchor_valid = true;
-        lv_async_call(async_scroll_bottom_cb, this);
     }
 
 };

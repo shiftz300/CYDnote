@@ -19,6 +19,7 @@ private:
     static constexpr size_t UPLOAD_YIELD_EVERY_BYTES = 1024;
     static constexpr size_t UPLOAD_MIN_FREE_HEAP = 24UL * 1024UL;
     static constexpr size_t UPLOAD_SYNC_EVERY_BYTES = 8192;
+    static constexpr size_t UPLOAD_STAGE_BUF_SIZE = 2048;
 
     StorageHelper* sd_helper;
     WebServer* server;
@@ -45,6 +46,9 @@ private:
     size_t upload_batch_ok;
     size_t upload_batch_fail;
     String upload_batch_error;
+    uint8_t* upload_stage_buf;
+    size_t upload_stage_cap;
+    size_t upload_stage_len;
 
 public:
     ApShareService()
@@ -53,7 +57,8 @@ public:
           upload_drive('L'), upload_ok(false), upload_failed(false), upload_bytes(0),
                     upload_sync_bytes(0),
                     upload_vpath(""), upload_error(""), upload_active(false), upload_batch_active(false),
-                    upload_batch_total(0), upload_batch_ok(0), upload_batch_fail(0), upload_batch_error("") {}
+                    upload_batch_total(0), upload_batch_ok(0), upload_batch_fail(0), upload_batch_error(""),
+                    upload_stage_buf(nullptr), upload_stage_cap(0), upload_stage_len(0) {}
 
     void init(StorageHelper* helper) { sd_helper = helper; }
 
@@ -254,6 +259,85 @@ private:
         if (upload_sd.isOpen()) upload_sd.close();
     }
 
+    void resetUploadStageBuffer() {
+        upload_stage_len = 0;
+    }
+
+    bool ensureUploadStageBuffer() {
+        if (upload_stage_buf) return true;
+        upload_stage_cap = UPLOAD_STAGE_BUF_SIZE;
+        upload_stage_buf = (uint8_t*)heap_caps_malloc(upload_stage_cap, MALLOC_CAP_8BIT);
+        if (upload_stage_buf) return true;
+        upload_stage_cap = UPLOAD_WRITE_SLICE_LOW_MEM;
+        upload_stage_buf = (uint8_t*)heap_caps_malloc(upload_stage_cap, MALLOC_CAP_8BIT);
+        if (!upload_stage_buf) {
+            upload_stage_cap = 0;
+            return false;
+        }
+        return true;
+    }
+
+    bool writeUploadChunk(const uint8_t* data, size_t len) {
+        if (!data || len == 0) return true;
+        size_t w = 0;
+        if (upload_drive == 'L' && upload_lfs) w = upload_lfs.write(data, len);
+        else if (upload_drive == 'D' && upload_sd.isOpen()) w = upload_sd.write(data, len);
+        if (w != len) {
+            upload_ok = false;
+            upload_failed = true;
+            upload_error = "write failed";
+            closeUploadHandles();
+            if (upload_vpath.length()) removeVPath(upload_vpath);
+            upload_batch_fail++;
+            if (!upload_batch_error.length()) upload_batch_error = upload_error;
+            return false;
+        }
+
+        upload_sync_bytes += len;
+        if (upload_bytes >= UPLOAD_YIELD_EVERY_BYTES) {
+            upload_bytes = 0;
+            delay(0);
+        }
+        if (upload_drive == 'D' && upload_sd.isOpen() && upload_sync_bytes >= UPLOAD_SYNC_EVERY_BYTES) {
+            upload_sd.sync();
+            upload_sync_bytes = 0;
+            delay(0);
+        }
+        return true;
+    }
+
+    bool flushUploadStageBuffer() {
+        if (!upload_stage_buf || upload_stage_len == 0) return true;
+        bool ok = writeUploadChunk(upload_stage_buf, upload_stage_len);
+        upload_stage_len = 0;
+        return ok;
+    }
+
+    bool stageUploadData(const uint8_t* data, size_t len) {
+        if (!data || len == 0) return true;
+        if (!upload_stage_buf || upload_stage_cap == 0) {
+            return writeUploadChunk(data, len);
+        }
+
+        while (len > 0) {
+            size_t room = upload_stage_cap - upload_stage_len;
+            if (room == 0) {
+                if (!flushUploadStageBuffer()) return false;
+                room = upload_stage_cap;
+            }
+            size_t take = (len < room) ? len : room;
+            memcpy(upload_stage_buf + upload_stage_len, data, take);
+            upload_stage_len += take;
+            data += take;
+            len -= take;
+
+            if (upload_stage_len == upload_stage_cap) {
+                if (!flushUploadStageBuffer()) return false;
+            }
+        }
+        return true;
+    }
+
     bool removeVPath(const String& vpath) {
         char d = driveFromVPath(vpath);
         String p = innerFromVPath(vpath);
@@ -413,6 +497,7 @@ private:
                 upload_batch_total++;
 
                 closeUploadHandles(); upload_ok = false; upload_failed = false; upload_bytes = 0; upload_sync_bytes = 0; upload_vpath = ""; upload_error = "";
+                resetUploadStageBuffer();
                 String req = server->hasArg("path") ? server->arg("path") : "/";
                 String drv = server->hasArg("drive") ? server->arg("drive") : "";
                 if (req.length() == 0) req = "/";
@@ -441,8 +526,19 @@ private:
                 String vpath = buildVPath(driveFromVPath(dir_vpath), final_inner);
                 upload_vpath = vpath; upload_drive = driveFromVPath(vpath);
                 String p = innerFromVPath(vpath);
+                bool stage_ready = ensureUploadStageBuffer();
                 if (upload_drive == 'L') { ensureLittleFsParent(p); upload_lfs = LittleFS.open(p.c_str(), "w"); upload_ok = (bool)upload_lfs; }
                 else if (upload_drive == 'D' && sd_helper && sd_helper->isInitialized()) { ensureSdParent(p); upload_sd = sd_helper->getFs().open(p.c_str(), O_WRONLY | O_CREAT | O_TRUNC); upload_ok = upload_sd.isOpen(); }
+                if (!stage_ready) {
+                    upload_ok = false;
+                    upload_failed = true;
+                    upload_error = "low memory";
+                    closeUploadHandles();
+                    if (upload_vpath.length()) removeVPath(upload_vpath);
+                    upload_batch_fail++;
+                    if (!upload_batch_error.length()) upload_batch_error = upload_error;
+                    return;
+                }
                 if (!upload_ok) {
                     upload_failed = true;
                     upload_error = "open failed";
@@ -459,32 +555,14 @@ private:
                     if (free_heap < UPLOAD_MIN_FREE_HEAP) slice = UPLOAD_WRITE_SLICE_LOW_MEM;
                     if (chunk > slice) chunk = slice;
 
-                    size_t w = 0;
-                    if (upload_drive == 'L' && upload_lfs) w = upload_lfs.write(up.buf + off, chunk);
-                    else if (upload_drive == 'D' && upload_sd.isOpen()) w = upload_sd.write(up.buf + off, chunk);
-                    if (w != chunk) {
-                        upload_ok = false; upload_failed = true; upload_error = "write failed";
-                        closeUploadHandles(); if (upload_vpath.length()) removeVPath(upload_vpath);
-                        upload_batch_fail++;
-                        if (!upload_batch_error.length()) upload_batch_error = upload_error;
-                        return;
-                    }
+                    if (!stageUploadData((const uint8_t*)(up.buf + off), chunk)) return;
 
                     off += chunk;
                     upload_bytes += chunk;
-                    upload_sync_bytes += chunk;
                     delay(0);
-                    if (upload_bytes >= UPLOAD_YIELD_EVERY_BYTES) {
-                        upload_bytes = 0;
-                        delay(0);
-                    }
-                    if (upload_drive == 'D' && upload_sd.isOpen() && upload_sync_bytes >= UPLOAD_SYNC_EVERY_BYTES) {
-                        upload_sd.sync();
-                        upload_sync_bytes = 0;
-                        delay(0);
-                    }
                 }
             } else if (up.status == UPLOAD_FILE_END) {
+                if (!flushUploadStageBuffer()) return;
                 if (upload_drive == 'D' && upload_sd.isOpen()) upload_sd.sync();
                 closeUploadHandles();
                 delay(0);
@@ -519,6 +597,12 @@ private:
         if (dns) { dns->stop(); delete dns; dns = nullptr; }
         if (server) { server->stop(); delete server; server = nullptr; }
         closeUploadHandles();
+        if (upload_stage_buf) {
+            heap_caps_free(upload_stage_buf);
+            upload_stage_buf = nullptr;
+        }
+        upload_stage_cap = 0;
+        upload_stage_len = 0;
         upload_vpath = ""; upload_ok = false; upload_failed = false; upload_bytes = 0; upload_error = ""; upload_active = false;
         WiFi.softAPdisconnect(true);
         running = false;

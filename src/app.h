@@ -7,6 +7,7 @@
 #include <vector>
 #include <algorithm>
 #include "config.h"
+#include "utils/format.h"
 #include "utils/storage.h"
 #include "utils/share.h"
 
@@ -22,8 +23,22 @@ private:
     static constexpr size_t IMAGE_GALLERY_MAX_ITEMS = 128;
     static constexpr size_t IMAGE_GALLERY_SCAN_ENTRY_LIMIT = 80;
     static constexpr size_t IMAGE_GALLERY_SCAN_IMAGE_LIMIT = 64;
-    static constexpr size_t READ_CHUNK_SIZE = 1536;
-    static constexpr size_t MAX_UTF8_CONTINUATION_BYTES = 3;
+    static constexpr size_t EDITOR_STREAM_CHUNK = 1024;
+    static constexpr size_t EDITOR_LAZYLOAD_THRESHOLD = 6 * 1024;
+    static constexpr size_t EDITOR_LAZYLOAD_WINDOW = 4 * 1024;
+    static constexpr size_t EDITOR_LAZYLOAD_OVERLAP_DOWN = 96;
+    static constexpr size_t EDITOR_LAZYLOAD_OVERLAP_UP = 0;
+    struct LazyFileState {
+        bool active;
+        bool loading;
+        String vpath;
+        size_t file_size;
+        size_t window_start;
+        size_t window_end;
+
+        LazyFileState()
+            : active(false), loading(false), vpath(""), file_size(0), window_start(0), window_end(0) {}
+    };
     AppMode current_mode;
     FileManager file_manager;
     Editor editor;
@@ -33,26 +48,23 @@ private:
     ApShareService ap_share;
     String current_filename;
     std::vector<String> image_gallery;
-    std::vector<size_t> read_chunk_offsets;
     int image_index;
-    size_t read_chunk_index;
-    size_t read_chunk_bytes;
-    uint64_t read_chunk_file_size;
-    
+    LazyFileState lazy_file;
+
     // Static wrapper for LVGL callbacks
     static AppManager* instance;
-    
+
 public:
-    AppManager() : current_mode(MODE_FILE_MANAGER), sd_helper(nullptr), image_index(-1), read_chunk_index(0), read_chunk_bytes(0), read_chunk_file_size(0) {
+    AppManager() : current_mode(MODE_FILE_MANAGER), sd_helper(nullptr), image_index(-1) {
         instance = this;
     }
-    
+
     void init() {
         sd_helper = SDHelper::getInstance();
         bool sd_ok = sd_helper && sd_helper->begin();
         if (!sd_ok) Serial.println("[SD] unavailable, D: disabled");
         ap_share.init(sd_helper);
-        
+
         // Create UI components
         file_manager.create(
             sd_ok,
@@ -66,22 +78,20 @@ public:
             [this]() -> String { return this->ap_share.statusString(); }
         );
         editor.create([this](){ this->showFileManager(); }, [this](){ this->handleSave(); });
-        editor.setReadChunkNavigationCallbacks(
-            [this](){ this->showPrevReadChunk(); },
-            [this](){ this->showNextReadChunk(); }
-        );
+        editor.setLazyLoadCallback([this](int direction) { this->handleEditorLazyLoad(direction); });
         image_viewer.create(
             [this](){ this->showFileManager(); },
             [this](){ this->showPrevImage(); },
             [this](){ this->showNextImage(); }
         );
         menu_manager.create();
-        
+
         // Show file manager initially
         showFileManager();
     }
-    
+
     void showFileManager() {
+        resetLazyFileState();
         clearImageGalleryCache();
         if (current_mode != MODE_FILE_MANAGER) {
             current_mode = MODE_FILE_MANAGER;
@@ -90,7 +100,7 @@ public:
         }
         file_manager.show(LV_SCR_LOAD_ANIM_NONE);
     }
-    
+
     void showEditor(const String& filename) {
         showEditorRaw(filename);
     }
@@ -102,35 +112,16 @@ private:
             current_mode = MODE_EDITOR;
         }
 
-        clearReadChunkState();
         current_filename = filename;
         editor.setTitle(filename);
-        editor.setText("");
-        editor.setReadChunkMode(false);
-        editor.setReadChunkNavigationState(false, false);
-        uint64_t file_size = 0;
-        bool should_use_chunk_mode = getVirtualFileSize(filename, file_size) && file_size > READ_CHUNK_SIZE;
-        if (should_use_chunk_mode) {
-            read_chunk_file_size = file_size;
-            read_chunk_offsets.push_back(0);
-            read_chunk_index = 0;
-            if (!loadReadChunkAtIndex(false)) {
-                clearReadChunkState();
-                editor.setReadChunkMode(false);
-                editor.setReadChunkNavigationState(false, false);
-            }
-        }
-
-        if (!editor.isReadChunkMode()) {
-            String content;
-            if (readVirtualFile(filename, content)) editor.setText(content);
-        }
+        loadVirtualFileToEditorChunked(filename);
 
         editor.show(LV_SCR_LOAD_ANIM_FADE_IN);
     }
 
 public:
     void showImage(const String& filename) {
+        resetLazyFileState();
         if (current_mode != MODE_IMAGE_VIEWER) {
             current_mode = MODE_IMAGE_VIEWER;
         }
@@ -139,7 +130,7 @@ public:
         buildImageGallery(filename);
         image_viewer.show(LV_SCR_LOAD_ANIM_NONE);
     }
-    
+
     void update() {
         // Avoid AP share FS polling while heavy file operations are running.
         if (!file_manager.isFsBusy()) ap_share.update();
@@ -166,11 +157,10 @@ public:
             menu_manager.clearAction();
         }
     }
-    
+
     void handleSave() {
-        if (editor.isReadChunkMode()) {
-            Serial.println("Read chunk mode is read-only");
-            if (menu_manager.isVisible()) menu_manager.toggle();
+        if (editor.isLazyLoadActive()) {
+            Serial.println("[Editor] lazy load mode active, large-file saving is disabled");
             return;
         }
         if (current_filename.isEmpty()) {
@@ -183,48 +173,53 @@ public:
             uint64_t new_size = 0;
             bool has_new = getVirtualFileSize(current_filename, new_size);
             if (!has_new) new_size = (uint64_t)content.length();
-            String from_h = had_old ? formatBytesHuman(old_size) : "0 B";
-            String to_h = formatBytesHuman(new_size);
+            String from_h = had_old ? FormatUtil::formatBytesHuman(old_size) : "0 B";
+            String to_h = FormatUtil::formatBytesHuman(new_size);
             editor.showSaveSuccessPopup(fileNameOf(current_filename), from_h, to_h);
             Serial.println("File saved: " + current_filename);
         } else {
             Serial.println("Save failed!");
         }
     }
-    
+
     void handleSaveAs() {
         Serial.println("Save As not yet implemented");
         menu_manager.toggle();
     }
-    
+
+    void handleReadMode() {
+        Serial.println("Read mode not yet implemented");
+        menu_manager.toggle();
+    }
+
     void handleServeAP() {
         bool running = toggleShareApService();
         Serial.println(running ? "[ShareAP] started" : "[ShareAP] stopped");
         menu_manager.toggle();
     }
-    
+
     void handleExit() {
         showFileManager();
         menu_manager.toggle();
     }
-    
+
     void toggleMenu() {
         menu_manager.toggle();
     }
-    
+
     void toggleIME() {
         if (current_mode == MODE_EDITOR) {
             editor.toggleIME();
         }
     }
-    
+
     static AppManager* getInstance() {
         if (!instance) {
             instance = new AppManager();
         }
         return instance;
     }
-    
+
     AppMode getCurrentMode() const {
         return current_mode;
     }
@@ -234,98 +229,239 @@ public:
     }
 
 private:
-    void clearReadChunkState() {
-        read_chunk_offsets.clear();
-        read_chunk_index = 0;
-        read_chunk_bytes = 0;
-        read_chunk_file_size = 0;
-    }
-
-    void showPrevReadChunk() {
-        if (!editor.isReadChunkMode()) return;
-        if (read_chunk_index == 0) return;
-        read_chunk_index--;
-        loadReadChunkAtIndex(true);
-    }
-
-    void showNextReadChunk() {
-        if (!editor.isReadChunkMode()) return;
-        if (read_chunk_offsets.empty()) return;
-        if (read_chunk_index >= read_chunk_offsets.size()) return;
-        uint64_t next_offset64 = (uint64_t)read_chunk_offsets[read_chunk_index] + (uint64_t)read_chunk_bytes;
-        if (next_offset64 > (uint64_t)SIZE_MAX || next_offset64 >= read_chunk_file_size || read_chunk_bytes == 0) return;
-        size_t next_offset = (size_t)next_offset64;
-        if (read_chunk_index + 1 < read_chunk_offsets.size()) {
-            read_chunk_index++;
-            loadReadChunkAtIndex(false);
-            return;
+    template <typename TFile>
+    bool appendOpenFileToEditor(TFile& f) {
+        char buf[EDITOR_STREAM_CHUNK + 1];
+        while (true) {
+            int n = f.read((uint8_t*)buf, EDITOR_STREAM_CHUNK);
+            if (n <= 0) break;
+            buf[n] = '\0';
+            editor.appendChunkedText(buf);
+            delay(0);
         }
-        read_chunk_offsets.push_back(next_offset);
-        read_chunk_index = read_chunk_offsets.size() - 1;
-        if (!loadReadChunkAtIndex(false)) {
-            read_chunk_offsets.pop_back();
-            read_chunk_index = read_chunk_offsets.empty() ? 0 : (read_chunk_offsets.size() - 1);
-        }
-    }
-
-    bool loadReadChunkAtIndex(bool anchor_end) {
-        if (read_chunk_offsets.empty() || read_chunk_index >= read_chunk_offsets.size()) return false;
-        String content;
-        size_t bytes_read = 0;
-        size_t offset = read_chunk_offsets[read_chunk_index];
-        if (!readVirtualFileChunk(current_filename, offset, READ_CHUNK_SIZE, content, bytes_read)) return false;
-        if (bytes_read == 0 && read_chunk_file_size > 0) return false;
-        trimIncompleteUtf8Tail(content, bytes_read, ((uint64_t)offset + (uint64_t)bytes_read) < read_chunk_file_size);
-        if (bytes_read == 0 && read_chunk_file_size > 0) return false;
-
-        read_chunk_bytes = bytes_read;
-        editor.setTitle(current_filename);
-        editor.setReadChunkMode(true);
-        editor.setReadChunkNavigationState(read_chunk_index > 0, ((uint64_t)offset + (uint64_t)read_chunk_bytes) < read_chunk_file_size);
-        editor.setReadChunkText(content, anchor_end);
+        f.close();
+        editor.endChunkedText();
         return true;
     }
 
-    // Return the expected UTF-8 codepoint width from a lead byte, or 0 if the lead byte is invalid.
-    size_t utf8CodepointBytes(uint8_t lead) const {
-        if ((lead & 0x80U) == 0) return 1;
-        if (lead >= 0xC2U && lead <= 0xDFU) return 2;
-        if ((lead & 0xF0U) == 0xE0U) return 3;
-        if (lead >= 0xF0U && lead <= 0xF4U) return 4;
-        return 0;
+    template <typename TFile>
+    bool concatOpenFileWindowToString(TFile& f, String& out, size_t remaining) {
+        char buf[EDITOR_STREAM_CHUNK + 1];
+        while (remaining > 0) {
+            size_t want = remaining > EDITOR_STREAM_CHUNK ? EDITOR_STREAM_CHUNK : remaining;
+            int n = f.read((uint8_t*)buf, want);
+            if (n <= 0) break;
+            buf[n] = '\0';
+            if (!out.concat(buf, (unsigned int)n)) {
+                f.close();
+                return false;
+            }
+            remaining -= (size_t)n;
+            delay(0);
+        }
+        f.close();
+        return true;
     }
 
-    // Remove any incomplete UTF-8 sequence at the end of a chunk and keep bytes_read in sync with the trimmed content.
-    void trimIncompleteUtf8Tail(String& content, size_t& bytes_read, bool has_more) {
-        if (!has_more || bytes_read == 0) return;
-        const char* data = content.c_str();
-        if (!data) return;
-
-        size_t end = bytes_read;
-        size_t cont_bytes = 0;
-        while (cont_bytes < end && cont_bytes < MAX_UTF8_CONTINUATION_BYTES) {
-            uint8_t c = (uint8_t)data[end - 1 - cont_bytes];
-            if ((c & 0xC0U) != 0x80U) break;
-            cont_bytes++;
+    bool loadVirtualFileToEditorChunked(const String& vpath) {
+        uint64_t total64 = 0;
+        bool has_size = getVirtualFileSize(vpath, total64);
+        size_t total = has_size ? (size_t)total64 : 0;
+        if (total >= EDITOR_LAZYLOAD_THRESHOLD) {
+            return loadVirtualFileLazy(vpath, total);
         }
 
-        if (cont_bytes == 0) {
-            size_t expected = utf8CodepointBytes((uint8_t)data[end - 1]);
-            // Trim a lone multibyte lead byte that landed at the chunk boundary.
-            if (expected > 1 && end > 0) end--;
-        } else if (cont_bytes < end) {
-            size_t lead_index = end - 1 - cont_bytes;
-            size_t expected = utf8CodepointBytes((uint8_t)data[lead_index]);
-            // Trim incomplete or invalid UTF-8 tail bytes before switching chunks.
-            if (expected == 0 || expected != (cont_bytes + 1)) end = lead_index;
-        } else {
-            end = 0;
+        resetLazyFileState();
+        editor.beginChunkedText(total);
+
+        auto fail_empty = [&]() {
+            resetLazyFileState();
+            editor.setText("");
+            return false;
+        };
+
+        char drive = driveOf(vpath);
+        String path = innerPathOf(vpath);
+
+        if (drive == 'L') {
+            File f = LittleFS.open(path.c_str(), "r");
+            if (!f) return fail_empty();
+            return appendOpenFileToEditor(f);
         }
 
-        if (end < bytes_read) {
-            content.remove(end);
-            bytes_read = end;
+        if (drive == 'D' && sd_helper && sd_helper->isInitialized()) {
+            FsFile f = sd_helper->getFs().open(path.c_str(), O_RDONLY);
+            if (!f.isOpen()) return fail_empty();
+            return appendOpenFileToEditor(f);
         }
+
+        return fail_empty();
+    }
+
+    bool loadVirtualFileLazy(const String& vpath, size_t total_size) {
+        lazy_file.active = true;
+        lazy_file.loading = false;
+        lazy_file.vpath = vpath;
+        lazy_file.file_size = total_size;
+        lazy_file.window_start = 0;
+        lazy_file.window_end = 0;
+        editor.setLazyLoadState(true, 0, 0, total_size);
+        return loadLazyWindowAt(0, false);
+    }
+
+    bool calcNextLazyWindow(int direction, size_t& next_start, bool& stick_to_bottom) const {
+        next_start = lazy_file.window_start;
+        stick_to_bottom = false;
+
+        if (direction > 0) {
+            if (lazy_file.window_end >= lazy_file.file_size) return false;
+            next_start = (lazy_file.window_end > EDITOR_LAZYLOAD_OVERLAP_DOWN)
+                ? (lazy_file.window_end - EDITOR_LAZYLOAD_OVERLAP_DOWN)
+                : lazy_file.window_end;
+            return next_start != lazy_file.window_start;
+        }
+
+        if (lazy_file.window_start == 0) return false;
+        size_t step_up = (EDITOR_LAZYLOAD_WINDOW > EDITOR_LAZYLOAD_OVERLAP_UP)
+            ? (EDITOR_LAZYLOAD_WINDOW - EDITOR_LAZYLOAD_OVERLAP_UP)
+            : EDITOR_LAZYLOAD_WINDOW;
+        next_start = (lazy_file.window_start > step_up) ? (lazy_file.window_start - step_up) : 0;
+        stick_to_bottom = true;
+        return next_start != lazy_file.window_start;
+    }
+
+    void handleEditorLazyLoad(int direction) {
+        if (!lazy_file.active || lazy_file.loading) {
+            editor.cancelLazyLoadRequest();
+            return;
+        }
+
+        size_t next_start = 0;
+        bool stick_to_bottom = false;
+        if (!calcNextLazyWindow(direction, next_start, stick_to_bottom)) {
+            editor.cancelLazyLoadRequest();
+            return;
+        }
+
+        lazy_file.loading = true;
+        bool ok = loadLazyWindowAt(next_start, stick_to_bottom);
+        lazy_file.loading = false;
+        if (!ok) editor.cancelLazyLoadRequest();
+    }
+
+    bool loadLazyWindowAt(size_t start_offset, bool stick_to_bottom) {
+        if (!lazy_file.active) return false;
+        if (start_offset >= lazy_file.file_size && lazy_file.file_size > 0) {
+            start_offset = lazy_file.file_size - 1;
+        }
+
+        size_t to_read = EDITOR_LAZYLOAD_WINDOW;
+        if (lazy_file.file_size > start_offset) {
+            size_t remain = lazy_file.file_size - start_offset;
+            if (remain < to_read) to_read = remain;
+        }
+
+        String content;
+        size_t actual_start = 0;
+        size_t actual_end = 0;
+        if (!readVirtualFileWindow(lazy_file.vpath, start_offset, to_read, content, actual_start, actual_end)) {
+            return false;
+        }
+
+        lazy_file.window_start = actual_start;
+        lazy_file.window_end = actual_end;
+        editor.setLazyWindowText(content, actual_start, actual_end, lazy_file.file_size, stick_to_bottom);
+        return true;
+    }
+
+    bool readVirtualFileWindow(const String& vpath, size_t start_offset, size_t max_len, String& out, size_t& out_start, size_t& out_end) {
+        out = "";
+        out_start = start_offset;
+        out_end = start_offset;
+        if (max_len == 0) return true;
+
+        out.reserve(max_len + 1);
+        char drive = driveOf(vpath);
+        String path = innerPathOf(vpath);
+        size_t remaining = max_len;
+
+        auto finalize_window = [&]() {
+            size_t trim_start = 0;
+            const char* raw = out.c_str();
+            if (start_offset > 0) {
+                while (trim_start < out.length() && trim_start < 3 && isUtf8ContinuationByte((uint8_t)raw[trim_start])) {
+                    trim_start++;
+                }
+            }
+            if (trim_start > 0) {
+                out.remove(0, trim_start);
+                out_start += trim_start;
+            }
+
+            size_t safe_len = utf8SafePrefixLength(out.c_str(), out.length());
+            if (safe_len < out.length()) {
+                out.remove(safe_len, out.length() - safe_len);
+            }
+            out_end = out_start + safe_len;
+            return true;
+        };
+
+        if (drive == 'L') {
+            File f = LittleFS.open(path.c_str(), "r");
+            if (!f) return false;
+            if (start_offset > 0 && !f.seek(start_offset)) {
+                f.close();
+                return false;
+            }
+            if (!concatOpenFileWindowToString(f, out, remaining)) return false;
+            return finalize_window();
+        }
+
+        if (drive == 'D' && sd_helper && sd_helper->isInitialized()) {
+            FsFile f = sd_helper->getFs().open(path.c_str(), O_RDONLY);
+            if (!f.isOpen()) return false;
+            if (start_offset > 0 && !f.seekSet(start_offset)) {
+                f.close();
+                return false;
+            }
+            if (!concatOpenFileWindowToString(f, out, remaining)) return false;
+            return finalize_window();
+        }
+
+        return false;
+    }
+
+    static bool isUtf8ContinuationByte(uint8_t c) {
+        return (c & 0xC0U) == 0x80U;
+    }
+
+    static size_t utf8SafePrefixLength(const char* data, size_t len) {
+        if (!data || len == 0) return 0;
+
+        size_t i = 0;
+        while (i < len) {
+            uint8_t c = (uint8_t)data[i];
+            size_t char_len = 1;
+
+            if ((c & 0x80U) == 0x00U) char_len = 1;
+            else if ((c & 0xE0U) == 0xC0U) char_len = 2;
+            else if ((c & 0xF0U) == 0xE0U) char_len = 3;
+            else if ((c & 0xF8U) == 0xF0U) char_len = 4;
+            else break;
+
+            if (i + char_len > len) break;
+            bool valid = true;
+            for (size_t j = 1; j < char_len; j++) {
+                if (!isUtf8ContinuationByte((uint8_t)data[i + j])) {
+                    valid = false;
+                    break;
+                }
+            }
+            if (!valid) break;
+            i += char_len;
+        }
+
+        return i;
     }
 
     bool readVirtualFile(const String& vpath, String& out) {
@@ -343,7 +479,7 @@ private:
                 int n = f.read((uint8_t*)buf, CHUNK);
                 if (n <= 0) break;
                 buf[n] = '\0';
-                if (!out.concat(buf, static_cast<unsigned int>(n))) {
+                if (!out.concat(buf, (unsigned int)n)) {
                     f.close();
                     return false;
                 }
@@ -353,49 +489,6 @@ private:
         }
         if (drive == 'D' && sd_helper && sd_helper->isInitialized()) {
             return sd_helper->readFile(path.c_str(), out);
-        }
-        return false;
-    }
-
-    bool readVirtualFileChunk(const String& vpath, size_t offset, size_t max_bytes, String& out, size_t& bytes_read) {
-        bytes_read = 0;
-        char drive = driveOf(vpath);
-        String path = innerPathOf(vpath);
-        if (drive == 'L') {
-            File f = LittleFS.open(path.c_str(), "r");
-            if (!f) return false;
-            out = "";
-            size_t file_size = (size_t)f.size();
-            if (offset >= file_size) {
-                f.close();
-                return true;
-            }
-            if (!f.seek(offset, SeekSet)) {
-                f.close();
-                return false;
-            }
-            size_t target = file_size - offset;
-            if (target > max_bytes) target = max_bytes;
-            if (target > 0) out.reserve(target + 1);
-            static constexpr size_t CHUNK = 512;
-            char buf[CHUNK + 1];
-            while (bytes_read < target) {
-                size_t want = target - bytes_read;
-                if (want > CHUNK) want = CHUNK;
-                int n = f.read((uint8_t*)buf, want);
-                if (n <= 0) break;
-                buf[n] = '\0';
-                if (!out.concat(buf, static_cast<unsigned int>(n))) {
-                    f.close();
-                    return false;
-                }
-                bytes_read += (size_t)n;
-            }
-            f.close();
-            return true;
-        }
-        if (drive == 'D' && sd_helper && sd_helper->isInitialized()) {
-            return sd_helper->readFileChunk(path.c_str(), offset, max_bytes, out, bytes_read);
         }
         return false;
     }
@@ -439,23 +532,6 @@ private:
             return true;
         }
         return false;
-    }
-
-    String formatBytesHuman(uint64_t bytes) const {
-        char buf[32];
-        if (bytes >= (1024ULL * 1024ULL * 1024ULL)) {
-            float v = (float)bytes / (1024.0f * 1024.0f * 1024.0f);
-            snprintf(buf, sizeof(buf), "%.2f GB", v);
-        } else if (bytes >= (1024ULL * 1024ULL)) {
-            float v = (float)bytes / (1024.0f * 1024.0f);
-            snprintf(buf, sizeof(buf), "%.2f MB", v);
-        } else if (bytes >= 1024ULL) {
-            float v = (float)bytes / 1024.0f;
-            snprintf(buf, sizeof(buf), "%.1f KB", v);
-        } else {
-            snprintf(buf, sizeof(buf), "%llu B", (unsigned long long)bytes);
-        }
-        return String(buf);
     }
 
     bool toggleShareApService() {
@@ -620,6 +696,11 @@ private:
         }
         std::vector<String>().swap(image_gallery);
         image_index = -1;
+    }
+
+    void resetLazyFileState() {
+        lazy_file = LazyFileState();
+        editor.setLazyLoadState(false, 0, 0, 0);
     }
 };
 

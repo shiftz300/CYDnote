@@ -19,6 +19,7 @@
 #include "config.h"
 #include "app.h"
 #include "ui/fonts.h"
+#include "utils/format.h"
 #include "utils/storage.h"
 
 // Application manager instance
@@ -36,7 +37,7 @@ XPT2046_Touchscreen touchscreen(XPT2046_CS);
 // - Smaller partial chunks reduce per-flush blocking.
 // - Optional double buffer improves overlap between render and flush.
 #ifndef LVGL_DRAW_BUF_DIV
-#define LVGL_DRAW_BUF_DIV 8
+#define LVGL_DRAW_BUF_DIV 6
 #endif
 #ifndef LVGL_DOUBLE_BUF
 #define LVGL_DOUBLE_BUF 1
@@ -51,8 +52,11 @@ static int last_touch_y = -1;
 static bool touch_has_last = false;
 
 // Touch tuning (higher responsiveness)
-static const int TOUCH_MIN_PRESSURE = 220;
+static const int TOUCH_MIN_PRESSURE = 180;
 static const int TOUCH_DEADZONE_PX = 1;
+static const int TOUCH_FAST_PATH_DELTA_PX = 10;
+static const int TOUCH_FOLLOW_NUM = 3;
+static const int TOUCH_FOLLOW_DEN = 4;
 
 // DMA-capable LVGL draw buffers (allocated at runtime)
 static uint8_t* draw_buf_1 = nullptr;
@@ -101,6 +105,84 @@ static uint8_t dark_rise_confirm = 0;
 static uint8_t dark_exit_confirm = 0;
 static bool bl_dark_lock = true;
 
+static bool hasPsram() {
+  return ESP.getPsramSize() > 0;
+}
+
+static uint8_t* allocDrawBufferPreferPsram(size_t size, const char* name) {
+  LV_UNUSED(name);
+  uint8_t* p = nullptr;
+
+  if (hasPsram()) {
+    p = (uint8_t*)heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (p) return p;
+  }
+
+  p = (uint8_t*)heap_caps_malloc(size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  if (p) return p;
+
+  return (uint8_t*)heap_caps_malloc(size, MALLOC_CAP_8BIT);
+}
+
+static inline float clampf(float v, float lo, float hi) {
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return v;
+}
+
+static inline float clamp01(float v) {
+  return clampf(v, 0.0f, 1.0f);
+}
+
+static inline float lerpf(float a, float b, float t) {
+  return a + (b - a) * t;
+}
+
+static inline float invLerp01(float v, float lo, float hi) {
+  if (hi <= lo) return 0.0f;
+  return clamp01((v - lo) / (hi - lo));
+}
+
+static inline float smoothstep01(float t) {
+  t = clamp01(t);
+  return t * t * (3.0f - 2.0f * t);
+}
+
+static inline void resetTouchTracking() {
+  touch_has_last = false;
+}
+
+static uint16_t median5Push(uint16_t sample) {
+  cds_samples[cds_sample_idx] = sample;
+  cds_sample_idx = (uint8_t)((cds_sample_idx + 1U) % 5U);
+  uint16_t w[5];
+  for (int i = 0; i < 5; ++i) w[i] = cds_samples[i];
+  for (int i = 0; i < 4; ++i) {
+    for (int j = i + 1; j < 5; ++j) {
+      if (w[j] < w[i]) {
+        uint16_t t2 = w[i];
+        w[i] = w[j];
+        w[j] = t2;
+      }
+    }
+  }
+  return w[2];
+}
+
+static inline float backlightTargetCurve(float t) {
+  t = clamp01(t);
+  if (t <= BL_ULTRA_DARK_ZONE) {
+    return smoothstep01(invLerp01(t, 0.0f, BL_ULTRA_DARK_ZONE)) * BL_ULTRA_DARK_GAIN;
+  }
+  if (t <= BL_DARK_ZONE) {
+    return BL_ULTRA_DARK_GAIN +
+           smoothstep01(invLerp01(t, BL_ULTRA_DARK_ZONE, BL_DARK_ZONE)) *
+               (BL_DARK_GAIN - BL_ULTRA_DARK_GAIN);
+  }
+  return BL_DARK_GAIN +
+         powf(invLerp01(t, BL_DARK_ZONE, 1.0f), BL_GAMMA) * (1.0f - BL_DARK_GAIN);
+}
+
 static inline void backlightWritePct(uint8_t pct) {
   if (pct < BL_MIN_PCT) pct = BL_MIN_PCT;
   if (pct > BL_MAX_PCT) pct = BL_MAX_PCT;
@@ -142,20 +224,7 @@ static void backlightAutoUpdate() {
   if (CDS_INVERT) raw = 4095 - raw;
 
   // 5-point median filter to suppress ADC spikes in low light.
-  cds_samples[cds_sample_idx] = (uint16_t)raw;
-  cds_sample_idx = (uint8_t)((cds_sample_idx + 1U) % 5U);
-  uint16_t w[5];
-  for (int i = 0; i < 5; ++i) w[i] = cds_samples[i];
-  for (int i = 0; i < 4; ++i) {
-    for (int j = i + 1; j < 5; ++j) {
-      if (w[j] < w[i]) {
-        uint16_t t2 = w[i];
-        w[i] = w[j];
-        w[j] = t2;
-      }
-    }
-  }
-  raw = (int)w[2];
+  raw = (int)median5Push((uint16_t)raw);
 
   // Sliding observation window so brightness reacts to "current environment",
   // not old extreme values from minutes ago.
@@ -166,35 +235,12 @@ static void backlightAutoUpdate() {
   else if (cds_obs_max > 0) cds_obs_max--;
 
   int span = cds_obs_max - cds_obs_min;
-  float t = 0.0f;
-  if (span >= BL_MIN_SPAN_FOR_DYNAMIC) {
-    t = (float)(raw - cds_obs_min) / (float)span;
-  } else {
-    // Not enough ambient variation yet; fallback to full-range rough mapping.
-    t = (float)raw / 4095.0f;
-  }
-  if (t < 0.0f) t = 0.0f;
-  if (t > 1.0f) t = 1.0f;
+  float t = (span >= BL_MIN_SPAN_FOR_DYNAMIC)
+                ? invLerp01((float)raw, (float)cds_obs_min, (float)cds_obs_max)
+                : clamp01((float)raw / 4095.0f);
 
-  float span_pct = (float)(BL_MAX_PCT - BL_MIN_PCT);
-  float target_pct = (float)BL_MIN_PCT;
-  if (t <= BL_ULTRA_DARK_ZONE) {
-    // First 10%: heavily compressed to avoid visible jumps in near-dark.
-    float tu = t / BL_ULTRA_DARK_ZONE;         // 0..1
-    float yu = tu * tu;                         // flatten near zero
-    target_pct += yu * (span_pct * BL_ULTRA_DARK_GAIN);
-  } else if (t <= BL_DARK_ZONE) {
-    // Compress dark region: ambient changes have very small brightness impact.
-    float td = (t - BL_ULTRA_DARK_ZONE) / (BL_DARK_ZONE - BL_ULTRA_DARK_ZONE); // 0..1
-    float yd = td * td;
-    target_pct += (span_pct * BL_ULTRA_DARK_GAIN) +
-                  yd * (span_pct * (BL_DARK_GAIN - BL_ULTRA_DARK_GAIN));
-  } else {
-    // Above dark zone: use remaining range with smooth non-linear growth.
-    float tb = (t - BL_DARK_ZONE) / (1.0f - BL_DARK_ZONE); // 0..1
-    float yb = powf(tb, BL_GAMMA);
-    target_pct += (span_pct * BL_DARK_GAIN) + yb * (span_pct * (1.0f - BL_DARK_GAIN));
-  }
+  float target_norm = backlightTargetCurve(t);
+  float target_pct = lerpf((float)BL_MIN_PCT, (float)BL_MAX_PCT, target_norm);
 
   // Dark-lock state machine:
   // - Enter dark lock quickly when ambient goes dark.
@@ -245,9 +291,7 @@ static void backlightAutoUpdate() {
     max_step = BL_FAST_MAX_STEP_PCT;
   }
 
-  float delta = diff * alpha;
-  if (delta > max_step) delta = max_step;
-  if (delta < -max_step) delta = -max_step;
+  float delta = clampf(diff * alpha, -max_step, max_step);
   bl_smoothed_pct += delta;
   int final_pct = (int)(bl_smoothed_pct + 0.5f);
   backlightWritePct((uint8_t)final_pct);
@@ -364,95 +408,6 @@ static void register_lvgl_sd_fs_driver() {
   lv_sd_fs_registered = true;
 }
 
-enum StatusLedState {
-  LED_BOOTING = 0,
-  LED_READY,
-  LED_BUSY,
-  LED_ERROR
-};
-
-static StatusLedState led_state = LED_BOOTING;
-
-static inline void statusLedWriteMono(bool on) {
-#if STATUS_LED_PIN >= 0
-  digitalWrite(STATUS_LED_PIN, on ? STATUS_LED_ON_LEVEL : (STATUS_LED_ON_LEVEL == HIGH ? LOW : HIGH));
-#else
-  (void)on;
-#endif
-}
-
-static inline void statusLedWriteRgb(bool r, bool g, bool b) {
-#if RGB_LED_R >= 0
-  digitalWrite(RGB_LED_R, r ? RGB_LED_ON_LEVEL : (RGB_LED_ON_LEVEL == HIGH ? LOW : HIGH));
-#endif
-#if RGB_LED_G >= 0
-  digitalWrite(RGB_LED_G, g ? RGB_LED_ON_LEVEL : (RGB_LED_ON_LEVEL == HIGH ? LOW : HIGH));
-#endif
-#if RGB_LED_B >= 0
-  digitalWrite(RGB_LED_B, b ? RGB_LED_ON_LEVEL : (RGB_LED_ON_LEVEL == HIGH ? LOW : HIGH));
-#endif
-}
-
-static void statusLedInit() {
-#if STATUS_LED_PIN >= 0
-  pinMode(STATUS_LED_PIN, OUTPUT);
-  statusLedWriteMono(false);
-#endif
-#if RGB_LED_R >= 0
-  pinMode(RGB_LED_R, OUTPUT);
-#endif
-#if RGB_LED_G >= 0
-  pinMode(RGB_LED_G, OUTPUT);
-#endif
-#if RGB_LED_B >= 0
-  pinMode(RGB_LED_B, OUTPUT);
-#endif
-#if (RGB_LED_R >= 0) || (RGB_LED_G >= 0) || (RGB_LED_B >= 0)
-  statusLedWriteRgb(false, false, false);
-#endif
-}
-
-static void statusLedSetState(StatusLedState s) {
-  led_state = s;
-}
-
-static void statusLedUpdate() {
-  uint32_t t = millis();
-#if (RGB_LED_R >= 0) || (RGB_LED_G >= 0) || (RGB_LED_B >= 0)
-  // RGB LED mapping:
-  // booting: yellow blink, ready: green, busy: cyan blink, error: red fast blink
-  switch (led_state) {
-    case LED_BOOTING:
-      statusLedWriteRgb(((t / 150) % 2) == 0, ((t / 150) % 2) == 0, false);
-      break;
-    case LED_READY:
-      statusLedWriteRgb(false, true, false);
-      break;
-    case LED_BUSY:
-      statusLedWriteRgb(false, ((t / 300) % 2) == 0, ((t / 300) % 2) == 0);
-      break;
-    case LED_ERROR:
-      statusLedWriteRgb(((t / 80) % 2) == 0, false, false);
-      break;
-  }
-#elif STATUS_LED_PIN >= 0
-  switch (led_state) {
-    case LED_BOOTING:
-      statusLedWriteMono(((t / 150) % 2) == 0);
-      break;
-    case LED_READY:
-      statusLedWriteMono(true);
-      break;
-    case LED_BUSY:
-      statusLedWriteMono(((t / 300) % 2) == 0);
-      break;
-    case LED_ERROR:
-      statusLedWriteMono(((t / 80) % 2) == 0);
-      break;
-  }
-#endif
-}
-
 static void tft_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_map) {
   uint32_t w = (uint32_t)(area->x2 - area->x1 + 1);
   uint32_t h = (uint32_t)(area->y2 - area->y1 + 1);
@@ -462,6 +417,7 @@ static void tft_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * 
   tft.setAddrWindow(area->x1, area->y1, w, h);
   tft.pushColors((uint16_t *)px_map, len, true);
   tft.endWrite();
+
   lv_display_flush_ready(disp);
 }
 
@@ -470,10 +426,10 @@ static void tft_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * 
 void touchscreen_read(lv_indev_t * indev, lv_indev_data_t * data) {
   LV_UNUSED(indev);
   // Checks if Touchscreen was touched, and prints X, Y and Pressure (Z)
-  if(touchscreen.tirqTouched() && touchscreen.touched()) {
-    // Get Touchscreen points
+  if(touchscreen.touched()) {
     TS_Point p = touchscreen.getPoint();
     if (p.z < TOUCH_MIN_PRESSURE) {
+      resetTouchTracking();
       data->state = LV_INDEV_STATE_RELEASED;
       return;
     }
@@ -484,18 +440,30 @@ void touchscreen_read(lv_indev_t * indev, lv_indev_data_t * data) {
     mapped_x = constrain(mapped_x, 0, SCREEN_WIDTH - 1);
     mapped_y = constrain(mapped_y, 0, SCREEN_HEIGHT - 1);
 
-    // Lighter low-pass + smaller deadzone for better follow feel
     if (!touch_has_last) {
       last_touch_x = mapped_x;
       last_touch_y = mapped_y;
       touch_has_last = true;
     } else {
-      int filtered_x = (last_touch_x * 2 + mapped_x * 8) / 10;
-      int filtered_y = (last_touch_y * 2 + mapped_y * 8) / 10;
-      if (abs(filtered_x - last_touch_x) < TOUCH_DEADZONE_PX) filtered_x = last_touch_x;
-      if (abs(filtered_y - last_touch_y) < TOUCH_DEADZONE_PX) filtered_y = last_touch_y;
-      last_touch_x = filtered_x;
-      last_touch_y = filtered_y;
+      int dx = mapped_x - last_touch_x;
+      int dy = mapped_y - last_touch_y;
+      int adx = abs(dx);
+      int ady = abs(dy);
+
+      if (adx <= TOUCH_DEADZONE_PX) mapped_x = last_touch_x;
+      if (ady <= TOUCH_DEADZONE_PX) mapped_y = last_touch_y;
+
+      if (adx >= TOUCH_FAST_PATH_DELTA_PX || ady >= TOUCH_FAST_PATH_DELTA_PX) {
+        last_touch_x = mapped_x;
+        last_touch_y = mapped_y;
+      } else {
+        int step_x = (dx * TOUCH_FOLLOW_NUM) / TOUCH_FOLLOW_DEN;
+        int step_y = (dy * TOUCH_FOLLOW_NUM) / TOUCH_FOLLOW_DEN;
+        if (step_x == 0 && dx != 0) step_x = (dx > 0) ? 1 : -1;
+        if (step_y == 0 && dy != 0) step_y = (dy > 0) ? 1 : -1;
+        last_touch_x = constrain(last_touch_x + step_x, 0, SCREEN_WIDTH - 1);
+        last_touch_y = constrain(last_touch_y + step_y, 0, SCREEN_HEIGHT - 1);
+      }
     }
     x = last_touch_x;
     y = last_touch_y;
@@ -508,7 +476,7 @@ void touchscreen_read(lv_indev_t * indev, lv_indev_data_t * data) {
     data->point.y = y;
   }
   else {
-    touch_has_last = false;
+    resetTouchTracking();
     data->state = LV_INDEV_STATE_RELEASED;
   }
 }
@@ -522,8 +490,6 @@ void setup() {
   lv_init();
 
   backlightInit();
-  statusLedInit();
-  statusLedSetState(LED_BOOTING);
   
   // Initialize LittleFS for internal flash storage
   delay(100);  // Give SPI time to settle
@@ -541,15 +507,15 @@ void setup() {
   }
   FontManager::init();
 
-  // Allocate LVGL draw buffer(s) from DMA-capable internal RAM.
+  // Allocate LVGL draw buffer(s), preferring PSRAM to reduce internal-RAM peak pressure.
   // Do this after font load to maximize contiguous heap for lv_binfont parser.
-  draw_buf_1 = (uint8_t*)heap_caps_malloc(DRAW_BUF_SIZE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+  draw_buf_1 = allocDrawBufferPreferPsram(DRAW_BUF_SIZE, "draw_buf_1");
   if (!draw_buf_1) {
     Serial.println("[ERROR] Failed to allocate LVGL draw_buf_1");
     while (1) { delay(1000); }
   }
   if (LVGL_DOUBLE_BUF) {
-    draw_buf_2 = (uint8_t*)heap_caps_malloc(DRAW_BUF_SIZE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    draw_buf_2 = allocDrawBufferPreferPsram(DRAW_BUF_SIZE, "draw_buf_2");
     if (!draw_buf_2) {
       Serial.println("[WARN] draw_buf_2 alloc failed, fallback to single buffer");
     }
@@ -579,7 +545,6 @@ void setup() {
   app = AppManager::getInstance();
   app->init();
   register_lvgl_sd_fs_driver();
-  statusLedSetState(fs_mount_ok ? LED_READY : LED_ERROR);
   
   Serial.println("CYDnote initialized");
 }
@@ -593,10 +558,6 @@ void loop() {
 
   lv_timer_handler();  // let the GUI do its work
   if (app) app->update();  // update app state and handle menu actions
-  if (!fs_mount_ok) statusLedSetState(LED_ERROR);
-  else if (app && app->isBusy()) statusLedSetState(LED_BUSY);
-  else statusLedSetState(LED_READY);
-  statusLedUpdate();
   backlightAutoUpdate();
   delay(0);              // keep yielding without adding an extra 1ms frame stall
 }
