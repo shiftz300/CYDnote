@@ -218,7 +218,7 @@ public:
         lv_obj_align(read_prev_btn, LV_ALIGN_TOP_RIGHT, -6, 42);
         lv_obj_add_event_cb(read_prev_btn, read_prev_btn_event_cb, LV_EVENT_CLICKED, this);
         lv_obj_t* prev_label = lv_label_create(read_prev_btn);
-        lv_label_set_text(prev_label, LV_SYMBOL_UP);
+        lv_label_set_text(prev_label, LV_SYMBOL_LEFT);
         lv_obj_set_style_text_font(prev_label, FontManager::iconFont(), 0);
         lv_obj_set_style_text_color(prev_label, lv_color_hex(0xFFFFFF), 0);
         lv_obj_center(prev_label);
@@ -234,7 +234,7 @@ public:
         lv_obj_align(read_next_btn, LV_ALIGN_BOTTOM_RIGHT, -6, -6);
         lv_obj_add_event_cb(read_next_btn, read_next_btn_event_cb, LV_EVENT_CLICKED, this);
         lv_obj_t* next_label = lv_label_create(read_next_btn);
-        lv_label_set_text(next_label, LV_SYMBOL_DOWN);
+        lv_label_set_text(next_label, LV_SYMBOL_RIGHT);
         lv_obj_set_style_text_font(next_label, FontManager::iconFont(), 0);
         lv_obj_set_style_text_color(next_label, lv_color_hex(0xFFFFFF), 0);
         lv_obj_center(next_label);

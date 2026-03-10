@@ -108,8 +108,23 @@ private:
         editor.setText("");
         editor.setReadChunkMode(false);
         editor.setReadChunkNavigationState(false, false);
-        String content;
-        if (readVirtualFile(filename, content)) editor.setText(content);
+        uint64_t file_size = 0;
+        bool can_chunk = getVirtualFileSize(filename, file_size) && file_size > READ_CHUNK_SIZE;
+        if (can_chunk) {
+            read_chunk_file_size = file_size;
+            read_chunk_offsets.push_back(0);
+            read_chunk_index = 0;
+            if (!loadReadChunkAtIndex(false)) {
+                clearReadChunkState();
+                editor.setReadChunkMode(false);
+                editor.setReadChunkNavigationState(false, false);
+            }
+        }
+
+        if (!editor.isReadChunkMode()) {
+            String content;
+            if (readVirtualFile(filename, content)) editor.setText(content);
+        }
 
         editor.show(LV_SCR_LOAD_ANIM_FADE_IN);
     }
@@ -138,9 +153,6 @@ public:
                     break;
                 case MENU_SAVE_AS:
                     handleSaveAs();
-                    break;
-                case MENU_READ_MODE:
-                    handleReadMode();
                     break;
                 case MENU_SERVE_AP:
                     handleServeAP();
@@ -182,36 +194,6 @@ public:
     
     void handleSaveAs() {
         Serial.println("Save As not yet implemented");
-        menu_manager.toggle();
-    }
-    
-    void handleReadMode() {
-        if (current_mode != MODE_EDITOR || current_filename.isEmpty()) {
-            menu_manager.toggle();
-            return;
-        }
-
-        if (editor.isReadChunkMode()) {
-            showEditorRaw(current_filename);
-            menu_manager.toggle();
-            return;
-        }
-
-        uint64_t file_size = 0;
-        if (!getVirtualFileSize(current_filename, file_size)) {
-            Serial.println("Read mode unavailable: size check failed");
-            menu_manager.toggle();
-            return;
-        }
-
-        clearReadChunkState();
-        read_chunk_file_size = file_size;
-        read_chunk_offsets.push_back(0);
-        read_chunk_index = 0;
-        if (!loadReadChunkAtIndex(false)) {
-            clearReadChunkState();
-            Serial.println("Read mode unavailable: chunk load failed");
-        }
         menu_manager.toggle();
     }
     
