@@ -646,13 +646,13 @@ private:
 
     static void read_prev_btn_event_cb(lv_event_t* e) {
         Editor* ed = (Editor*)lv_event_get_user_data(e);
-        if (!ed || !ed->on_read_prev_chunk_cb) return;
+        if (!ed || !ed->read_chunk_mode || !ed->read_chunk_has_prev || !ed->on_read_prev_chunk_cb) return;
         ed->on_read_prev_chunk_cb();
     }
 
     static void read_next_btn_event_cb(lv_event_t* e) {
         Editor* ed = (Editor*)lv_event_get_user_data(e);
-        if (!ed || !ed->on_read_next_chunk_cb) return;
+        if (!ed || !ed->read_chunk_mode || !ed->read_chunk_has_next || !ed->on_read_next_chunk_cb) return;
         ed->on_read_next_chunk_cb();
     }
 

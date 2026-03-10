@@ -210,6 +210,7 @@
       erase: "./manifest-full.json",
     };
     const releaseApi = "https://api.github.com/repos/shiftz300/CYDnote/releases/tags/latest";
+    const githubDownloadPrefix = "https://github.com/";
     const ghproxyPrefix = "https://ghproxy.com/";
     const requiredByMode = {
       preserve: ["bootloader.bin", "partitions.bin", "firmware.bin"],
@@ -232,9 +233,18 @@
     let currentManifestUrl = null;
     let releaseNoteBase = "正在读取 GitHub Release 构建文件…";
 
+    function formatErrorMessage(error, fallback) {
+      if (error && typeof error.message === "string" && error.message.trim()) {
+        return `${fallback}（${error.message}）`;
+      }
+      return fallback;
+    }
+
     function updateReleaseNote(text, isError = false) {
       releaseNoteBase = text;
-      releaseNote.textContent = ghproxyToggle.checked
+      if (!releaseNote) return;
+      const mirrorEnabled = !!(ghproxyToggle && ghproxyToggle.checked);
+      releaseNote.textContent = mirrorEnabled
         ? `${releaseNoteBase} 当前固件下载将通过 ghproxy 镜像。`
         : releaseNoteBase;
       releaseNote.classList.toggle("error", isError);
@@ -246,7 +256,7 @@
       installer.style.opacity = enabled ? "1" : "0.75";
     }
 
-    function releaseManifestUrl() {
+    function revokeManifestUrl() {
       if (!currentManifestUrl) return;
       URL.revokeObjectURL(currentManifestUrl);
       currentManifestUrl = null;
@@ -254,18 +264,20 @@
 
     async function updateMode(mode) {
       const response = await fetch(manifests[mode]);
-      if (!response.ok) throw new Error(`Manifest ${response.status}`);
+      if (!response.ok) throw new Error(`无法获取刷机配置文件：状态 ${response.status} ${response.statusText}`);
       const manifest = await response.json();
       if (ghproxyToggle.checked) {
         manifest.builds = (manifest.builds || []).map((build) => ({
           ...build,
           parts: (build.parts || []).map((part) => ({
             ...part,
-            path: part.path.startsWith("https://github.com/") ? `${ghproxyPrefix}${part.path}` : part.path,
+            path: typeof part.path === "string" && part.path.startsWith(githubDownloadPrefix)
+              ? `${ghproxyPrefix}${part.path}`
+              : part.path,
           })),
         }));
       }
-      releaseManifestUrl();
+      revokeManifestUrl();
       currentManifestUrl = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: "application/json" }));
       installer.setAttribute("manifest", currentManifestUrl);
       summary.textContent = summaryText[mode];
@@ -324,7 +336,7 @@
           await updateMode(radio.value);
           setButtonEnabled(true);
         } catch (error) {
-          updateReleaseNote(`切换刷机模式失败：${error.message}`, true);
+          updateReleaseNote(formatErrorMessage(error, "切换刷机模式失败"), true);
           setButtonEnabled(false);
         }
       });
@@ -336,17 +348,21 @@
         setButtonEnabled(false);
         await updateMode(activeMode);
         setButtonEnabled(true);
-        updateReleaseNote(releaseNoteBase, releaseNote.classList.contains("error"));
+        updateReleaseNote(releaseNoteBase, releaseNote ? releaseNote.classList.contains("error") : false);
       } catch (error) {
-        updateReleaseNote(`切换 ghproxy 镜像失败：${error.message}`, true);
+        updateReleaseNote(formatErrorMessage(error, "切换 ghproxy 镜像失败"), true);
         setButtonEnabled(false);
       }
+    });
+
+    window.addEventListener("beforeunload", () => {
+      revokeManifestUrl();
     });
 
     setButtonEnabled(false);
     updateReleaseNote(releaseNoteBase);
     Promise.all([updateMode("preserve"), loadReleaseInfo()]).catch((error) => {
-      updateReleaseNote(`初始化刷机页面失败：${error.message}`, true);
+      updateReleaseNote(formatErrorMessage(error, "初始化刷机页面失败"), true);
       setButtonEnabled(false);
     });
   </script>
