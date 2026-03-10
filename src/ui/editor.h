@@ -10,7 +10,7 @@
 
 class Editor {
 private:
-    static constexpr int32_t SCREEN_TRANSITION_MS = 55;
+    static constexpr int32_t SCREEN_TRANSITION_MS = 80;
     static constexpr int32_t IME_ANIM_TIME_MS = 90;
     static constexpr int32_t EDITOR_TEXT_SIZE_PX = 14;
     static constexpr int32_t IME_CANDIDATE_H = 28;
@@ -19,7 +19,7 @@ private:
     static constexpr uint8_t IME_PROXY_CAND_MAX = 20;
     static constexpr uint8_t IME_CAND_PER_PAGE = 8;
     static constexpr uint16_t IME_CAND_MAX = 160;
-    static constexpr size_t LARGE_DOC_PERF_THRESHOLD = 48 * 1024;
+    static constexpr size_t LARGE_DOC_PERF_THRESHOLD = 2 * 1024;
     static constexpr int32_t CHUNK_NAV_BTN_SIZE = 24;
     static constexpr int32_t CHUNK_NAV_EDGE_THRESHOLD = 6;
     lv_obj_t* screen;
@@ -185,6 +185,7 @@ public:
         lv_obj_set_flex_grow(textarea, 1);
         lv_textarea_set_one_line(textarea, false);
         lv_textarea_set_cursor_click_pos(textarea, true);
+        lv_textarea_set_text_selection(textarea, false);
         lv_obj_set_style_bg_color(textarea, lv_color_hex(0x000000), 0);
         lv_obj_set_style_border_color(textarea, lv_color_hex(0x303030), 0);
         lv_obj_set_style_text_color(textarea, lv_color_hex(0xFFFFFF), 0);
@@ -200,7 +201,7 @@ public:
         lv_obj_add_flag(textarea, LV_OBJ_FLAG_SCROLL_MOMENTUM);
         lv_obj_set_style_anim_duration(textarea, 260, 0);
         int32_t editor_cursor_h = EDITOR_TEXT_SIZE_PX;
-        if (editor_cursor_h < 4) editor_cursor_h = 4;
+        if (editor_cursor_h < 2) editor_cursor_h = 2;
         lv_obj_set_style_height(textarea, editor_cursor_h, LV_PART_CURSOR);
         lv_obj_add_event_cb(textarea, textarea_cursor_anchor_event_cb, LV_EVENT_CLICKED, this);
         lv_obj_add_event_cb(textarea, textarea_cursor_anchor_event_cb, LV_EVENT_VALUE_CHANGED, this);

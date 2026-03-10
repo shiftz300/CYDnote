@@ -35,22 +35,6 @@
 #ifndef CDS
 #define CDS 34
 #endif
-// Set to -1 to disable status LED support.
-#define STATUS_LED_PIN -1
-#define STATUS_LED_ON_LEVEL HIGH
-// RGB status LED pins. Set all to -1 to disable RGB LED.
-#ifndef RGB_LED_R
-#define RGB_LED_R -1
-#endif
-#ifndef RGB_LED_G
-#define RGB_LED_G -1
-#endif
-#ifndef RGB_LED_B
-#define RGB_LED_B -1
-#endif
-#ifndef RGB_LED_ON_LEVEL
-#define RGB_LED_ON_LEVEL HIGH
-#endif
 
 // Application Modes
 enum AppMode {

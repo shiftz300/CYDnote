@@ -7,6 +7,7 @@
 #include <vector>
 #include <algorithm>
 #include "config.h"
+#include "utils/format.h"
 #include "utils/storage.h"
 #include "utils/share.h"
 
@@ -38,21 +39,21 @@ private:
     size_t read_chunk_index;
     size_t read_chunk_bytes;
     uint64_t read_chunk_file_size;
-    
+
     // Static wrapper for LVGL callbacks
     static AppManager* instance;
-    
+
 public:
     AppManager() : current_mode(MODE_FILE_MANAGER), sd_helper(nullptr), image_index(-1), read_chunk_index(0), read_chunk_bytes(0), read_chunk_file_size(0) {
         instance = this;
     }
-    
+
     void init() {
         sd_helper = SDHelper::getInstance();
         bool sd_ok = sd_helper && sd_helper->begin();
         if (!sd_ok) Serial.println("[SD] unavailable, D: disabled");
         ap_share.init(sd_helper);
-        
+
         // Create UI components
         file_manager.create(
             sd_ok,
@@ -76,11 +77,11 @@ public:
             [this](){ this->showNextImage(); }
         );
         menu_manager.create();
-        
+
         // Show file manager initially
         showFileManager();
     }
-    
+
     void showFileManager() {
         clearImageGalleryCache();
         if (current_mode != MODE_FILE_MANAGER) {
@@ -90,7 +91,7 @@ public:
         }
         file_manager.show(LV_SCR_LOAD_ANIM_NONE);
     }
-    
+
     void showEditor(const String& filename) {
         showEditorRaw(filename);
     }
@@ -139,7 +140,7 @@ public:
         buildImageGallery(filename);
         image_viewer.show(LV_SCR_LOAD_ANIM_NONE);
     }
-    
+
     void update() {
         // Avoid AP share FS polling while heavy file operations are running.
         if (!file_manager.isFsBusy()) ap_share.update();
@@ -166,7 +167,7 @@ public:
             menu_manager.clearAction();
         }
     }
-    
+
     void handleSave() {
         if (editor.isReadChunkMode()) {
             Serial.println("Read chunk mode is read-only");
@@ -183,48 +184,48 @@ public:
             uint64_t new_size = 0;
             bool has_new = getVirtualFileSize(current_filename, new_size);
             if (!has_new) new_size = (uint64_t)content.length();
-            String from_h = had_old ? formatBytesHuman(old_size) : "0 B";
-            String to_h = formatBytesHuman(new_size);
+            String from_h = had_old ? FormatUtil::formatBytesHuman(old_size) : "0 B";
+            String to_h = FormatUtil::formatBytesHuman(new_size);
             editor.showSaveSuccessPopup(fileNameOf(current_filename), from_h, to_h);
             Serial.println("File saved: " + current_filename);
         } else {
             Serial.println("Save failed!");
         }
     }
-    
+
     void handleSaveAs() {
         Serial.println("Save As not yet implemented");
         menu_manager.toggle();
     }
-    
+
     void handleServeAP() {
         bool running = toggleShareApService();
         Serial.println(running ? "[ShareAP] started" : "[ShareAP] stopped");
         menu_manager.toggle();
     }
-    
+
     void handleExit() {
         showFileManager();
         menu_manager.toggle();
     }
-    
+
     void toggleMenu() {
         menu_manager.toggle();
     }
-    
+
     void toggleIME() {
         if (current_mode == MODE_EDITOR) {
             editor.toggleIME();
         }
     }
-    
+
     static AppManager* getInstance() {
         if (!instance) {
             instance = new AppManager();
         }
         return instance;
     }
-    
+
     AppMode getCurrentMode() const {
         return current_mode;
     }
@@ -252,8 +253,11 @@ private:
         if (!editor.isReadChunkMode()) return;
         if (read_chunk_offsets.empty()) return;
         if (read_chunk_index >= read_chunk_offsets.size()) return;
-        uint64_t next_offset64 = (uint64_t)read_chunk_offsets[read_chunk_index] + (uint64_t)read_chunk_bytes;
-        if (next_offset64 > (uint64_t)SIZE_MAX || next_offset64 >= read_chunk_file_size || read_chunk_bytes == 0) return;
+        uint64_t current_offset64 = (uint64_t)read_chunk_offsets[read_chunk_index];
+        if (read_chunk_bytes == 0 || current_offset64 >= read_chunk_file_size) return;
+        if ((uint64_t)read_chunk_bytes > (read_chunk_file_size - current_offset64)) return;
+        uint64_t next_offset64 = current_offset64 + (uint64_t)read_chunk_bytes;
+        if (next_offset64 > (uint64_t)SIZE_MAX || next_offset64 >= read_chunk_file_size) return;
         size_t next_offset = (size_t)next_offset64;
         if (read_chunk_index + 1 < read_chunk_offsets.size()) {
             read_chunk_index++;
