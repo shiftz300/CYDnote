@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CYDnote 在线刷机</title>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #111827;
+      color: #f9fafb;
+    }
+    body {
+      margin: 0;
+      background: linear-gradient(180deg, #111827 0%, #1f2937 100%);
+    }
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+    .card {
+      background: rgba(17, 24, 39, 0.82);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
+      backdrop-filter: blur(10px);
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 2rem;
+    }
+    p, li {
+      line-height: 1.65;
+      color: #d1d5db;
+    }
+    .mode {
+      display: grid;
+      gap: 12px;
+      margin: 24px 0;
+    }
+    .option {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 14px 16px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .option input {
+      margin-top: 4px;
+    }
+    .option strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #fff;
+    }
+    .summary {
+      margin: 18px 0;
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: rgba(59, 130, 246, 0.12);
+      border: 1px solid rgba(96, 165, 250, 0.35);
+      color: #dbeafe;
+    }
+    button {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      padding: 14px 22px;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #fff;
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      cursor: pointer;
+    }
+    code {
+      color: #bfdbfe;
+    }
+    .hint {
+      font-size: 0.95rem;
+      color: #9ca3af;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="card">
+      <h1>CYDnote 在线刷机</h1>
+      <p>适用于 <code>ESP32-2432S028/ESP32-2432S028R (CYD)</code>。请使用支持 Web Serial 的 Chrome/Edge，并通过 USB 连接设备。</p>
+
+      <div class="mode">
+        <label class="option">
+          <input type="radio" name="flash-mode" value="preserve" checked>
+          <span>
+            <strong>保留数据更新</strong>
+            仅更新引导、分区表和应用固件，<b>不覆盖</b> LittleFS 数据分区，适合日常升级。
+          </span>
+        </label>
+        <label class="option">
+          <input type="radio" name="flash-mode" value="erase">
+          <span>
+            <strong>全量覆盖恢复</strong>
+            同时写入 LittleFS 镜像，会覆盖设备上的本地数据，适合首次初始化或恢复出厂状态。
+          </span>
+        </label>
+      </div>
+
+      <div class="summary" id="mode-summary">
+        当前模式：保留数据更新（不会覆盖 <code>0x310000</code> 的 LittleFS 分区）。
+      </div>
+
+      <esp-web-install-button id="installer" manifest="./manifest-preserve.json">
+        <button slot="activate">连接设备并开始刷机</button>
+      </esp-web-install-button>
+
+      <ul>
+        <li>若自动进入下载模式失败，请按住 <code>BOOT</code>，再点一次 <code>RESET</code> 后重试。</li>
+        <li>“保留数据更新”仅在分区表未变化时才能可靠保留既有数据。</li>
+        <li>发布此页面时，请把编译得到的 <code>bootloader.bin</code>、<code>partitions.bin</code>、<code>firmware.bin</code>、<code>littlefs.bin</code> 与本页放在同一目录。</li>
+      </ul>
+      <p class="hint">本页使用 ESP Web Tools；manifest 已按本仓库的分区表和 LittleFS 偏移配置好。</p>
+    </div>
+  </main>
+
+  <script>
+    const manifests = {
+      preserve: "./manifest-preserve.json",
+      erase: "./manifest-full.json",
+    };
+
+    const summaryText = {
+      preserve: "当前模式：保留数据更新（不会覆盖 0x310000 的 LittleFS 分区）。",
+      erase: "当前模式：全量覆盖恢复（会写入 0x310000 的 LittleFS 分区并清空现有数据）。",
+    };
+
+    const installer = document.getElementById("installer");
+    const summary = document.getElementById("mode-summary");
+    const radios = document.querySelectorAll("input[name='flash-mode']");
+
+    function updateMode(mode) {
+      installer.setAttribute("manifest", manifests[mode]);
+      summary.textContent = summaryText[mode];
+    }
+
+    radios.forEach((radio) => {
+      radio.addEventListener("change", () => {
+        if (radio.checked) updateMode(radio.value);
+      });
+    });
+  </script>
+</body>
+</html>

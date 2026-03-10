@@ -12,6 +12,43 @@ Chinese version: `README.zh-CN.md`
 3. Before first use, upload `data/` to LittleFS if needed:
    - `pio run -e esp32-2432s028r -t uploadfs`
 
+## Online flashing website
+
+This repository now includes a minimal web flasher page at `webflash/index.html`.
+
+It offers two flashing modes:
+
+- **Preserve data update**: writes `bootloader.bin`, `partitions.bin`, and `firmware.bin` only, leaving the LittleFS data partition untouched
+- **Full restore**: also writes `littlefs.bin` to `0x310000`, replacing any existing on-device local data
+
+Setup steps:
+
+1. Build the firmware:
+   - `pio run -e esp32-2432s028r`
+2. If you want the full-restore option, build the LittleFS image too:
+   - `pio run -e esp32-2432s028r -t buildfs`
+3. Publish these files together in the same static site directory:
+   - `webflash/index.html`
+   - `webflash/manifest-preserve.json`
+   - `webflash/manifest-full.json`
+   - `.pio/build/esp32-2432s028r/bootloader.bin`
+   - `.pio/build/esp32-2432s028r/partitions.bin`
+   - `.pio/build/esp32-2432s028r/firmware.bin`
+   - `.pio/build/esp32-2432s028r/littlefs.bin`
+4. Host that directory on any HTTPS static hosting service such as GitHub Pages, Netlify, or Vercel
+
+If you want Netlify to deploy directly from this repository, a root-level `netlify.toml` is included:
+
+- The build command installs PlatformIO, builds the firmware, and generates `littlefs.bin`
+- It then assembles the page plus required binaries into `webflash-dist/`
+- In Netlify you can import the repository directly and let it publish from that generated directory
+
+Notes:
+
+- Use Chrome or Edge because the site depends on Web Serial
+- The preserve-data mode is only safe when the partition layout has not changed
+- The current board configuration is classic `ESP32`, not an `ESP32-S3` OPI PSRAM target
+
 ## Warning
 
 - THIS PROJECT **ONLY SUPPORTS** `ESP32-2432S028/ESP32-2432S028R (CYD)` HARDWARE.
