@@ -577,8 +577,8 @@
         }
         syncActionButtons();
       } catch (error) {
-        const isGithubApi403 = error?.status === 403;
-        if (isGithubApi403 && !ghproxyToggle.checked) {
+        const isGitHubApi403 = error?.status === 403;
+        if (isGitHubApi403 && !ghproxyToggle.checked) {
           ghproxyToggle.checked = true;
           try {
             await updateMode(getSelectedMode());
