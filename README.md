@@ -35,7 +35,7 @@ If you want Netlify to deploy directly from this repository, a root-level `netli
 - Netlify can publish the `webflash/` directory directly
 - The page loads firmware binaries from the repository's `latest` release assets
 - No firmware build step is required inside Netlify
-- The page also offers an optional `gh-proxy.org` mirror toggle for faster firmware downloads in mainland China
+- The page offers an optional `gh-proxy` mirror toggle and can retry firmware downloads through `gh-proxy.org`, `edgeone.gh-proxy.org`, `cdn.gh-proxy.org`, and `hk.gh-proxy.org`
 - The page now uses a flat in-page flashing flow instead of an extra web flashing popup
 - The page keeps a simple color-highlighted log area, shows the firmware asset build date from release asset timestamps, can back up either the on-device LittleFS partition or the full 4MB flash as a downloadable `.bin` file, and can restore those uploaded backup files back to the matching flash scope
 
@@ -44,7 +44,7 @@ Notes:
 - Use Chrome or Edge because the site depends on Web Serial
 - The preserve-data mode is only safe when the partition layout has not changed
 - If GitHub's direct downloads are slow in your region, enable the `gh-proxy.org` mirror toggle in the page
-- `gh-proxy.org` proxies firmware download URLs; if direct GitHub API access fails, the page also retries release metadata through `https://github.akams.cn/`
+- The flasher retries firmware download URLs through `gh-proxy.org`, `edgeone.gh-proxy.org`, `cdn.gh-proxy.org`, and `hk.gh-proxy.org`; if direct GitHub API access fails, it also retries release metadata through those proxy mirrors plus `https://github.akams.cn/`
 - The page checks the `latest` release assets on load; if `littlefs.bin` is missing it automatically disables the full-restore option
 - If the base firmware assets (`bootloader.bin`, `partitions.bin`, `firmware.bin`) are missing, the page blocks flashing entirely
 - If the browser cannot reach the GitHub API metadata endpoint, the page falls back to preserve-data mode only

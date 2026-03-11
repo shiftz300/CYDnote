@@ -35,7 +35,7 @@
 - Netlify 直接发布 `webflash/` 目录
 - 页面会自动读取仓库 `latest` release 里的固件文件
 - 因此不需要再在 Netlify 中构建固件
-- 页面还提供可选的 `gh-proxy.org` 国内镜像开关，用于加速固件 bin 下载
+- 页面提供可选的 `gh-proxy` 镜像开关，并会在 `gh-proxy.org`、`edgeone.gh-proxy.org`、`cdn.gh-proxy.org`、`hk.gh-proxy.org` 之间回退下载固件 bin
 - 页面现在改为网页内平面化直刷流程，不再额外弹出刷机弹窗
 - 页面现在还提供简化且带颜色高亮的状态日志、基于 Release 资产时间的固件构建日期显示，以及从已连接设备备份 LittleFS 分区或整机 4MB Flash 为 `.bin` 文件、并将这些备份文件上传刷回设备的功能
 
@@ -44,7 +44,7 @@
 - 浏览器需使用支持 Web Serial 的 Chrome / Edge
 - “保留数据更新”只在分区布局保持不变时才适合保留现有数据
 - 若 GitHub 官方下载较慢，可在页面里勾选 `gh-proxy.org` 镜像加速固件下载
-- `gh-proxy.org` 用于代理固件下载 URL；若直连 GitHub API 失败，页面会自动尝试通过 `https://github.akams.cn/` 拉取 release 元数据
+- 页面会通过 `gh-proxy.org`、`edgeone.gh-proxy.org`、`cdn.gh-proxy.org`、`hk.gh-proxy.org` 回退代理固件下载 URL；若直连 GitHub API 失败，也会自动尝试这些代理及 `https://github.akams.cn/` 拉取 release 元数据
 - 页面加载时会先检查 `latest` release 资产；若缺少 `littlefs.bin`，会自动禁用“全量覆盖恢复”
 - 若 `latest` release 中缺少基础固件文件（`bootloader.bin`、`partitions.bin`、`firmware.bin`），网页会阻止开始刷机
 - 若浏览器环境暂时无法访问 GitHub API，页面会回退为只保留“保留数据更新”模式

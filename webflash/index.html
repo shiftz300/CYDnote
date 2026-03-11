@@ -69,12 +69,32 @@
     .flow {
       display: grid;
       gap: 14px;
+      position: relative;
+      padding-left: 18px;
+    }
+    .flow::before {
+      content: "";
+      position: absolute;
+      left: 6px;
+      top: 6px;
+      bottom: 6px;
+      width: 1px;
+      background: linear-gradient(to bottom, rgba(92, 184, 255, 0.35), rgba(92, 184, 255, 0.1));
     }
     .step {
       border: 1px solid var(--cyd-border);
       border-radius: 12px;
       background: var(--cyd-panel);
       padding: 16px;
+      position: relative;
+    }
+    .step::before {
+      content: "";
+      position: absolute;
+      left: -18px;
+      top: 30px;
+      width: 18px;
+      border-top: 1px solid rgba(92, 184, 255, 0.32);
     }
     .step-head {
       display: flex;
@@ -224,8 +244,31 @@
       font-weight: 600;
     }
     .file-picker input[type="file"] {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .file-picker small {
+      color: var(--cyd-text-dim);
+      font-weight: 500;
+    }
+    .file-button {
+      appearance: none;
       width: 100%;
-      color: var(--cyd-text-soft);
+      border: 1px solid var(--cyd-primary-soft);
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #fff;
+      background: var(--cyd-panel-strong);
+      cursor: pointer;
+      text-align: center;
+      transition: background-color 0.18s ease, border-color 0.18s ease;
+    }
+    .file-button:hover {
+      background: rgba(92, 184, 255, 0.14);
+      border-color: var(--cyd-primary);
     }
     .actions {
       margin-top: 2px;
@@ -259,10 +302,7 @@
       accent-color: var(--cyd-primary);
     }
     .log-panel {
-      border: 1px solid var(--cyd-border);
-      border-radius: 10px;
-      background: #0b1220;
-      padding: 12px;
+      padding: 0;
     }
     #log-window {
       display: grid;
@@ -271,6 +311,7 @@
       max-height: 320px;
       overflow: auto;
       margin: 0;
+      padding: 10px 0;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 0.84rem;
       line-height: 1.5;
@@ -280,10 +321,7 @@
       grid-template-columns: auto auto 1fr;
       gap: 8px;
       align-items: start;
-      padding: 8px 10px;
-      border-radius: 8px;
-      background: rgba(15, 23, 42, 0.92);
-      border: 1px solid rgba(51, 65, 85, 0.85);
+      padding: 2px 0;
     }
     .log-time {
       color: #94a3b8;
@@ -365,7 +403,7 @@
     <div class="card">
       <div class="hero">
         <h1>CYDnote Web Flasher</h1>
-        <p>For <code>ESP32-2432S028/ESP32-2432S028R (CYD)</code>. Use Chrome/Edge and connect by USB.</p>
+        <p>Installation flow for <code>ESP32-2432S028/ESP32-2432S028R (CYD)</code>. Use Chrome/Edge and connect by USB.</p>
       </div>
 
       <div class="flow">
@@ -373,8 +411,8 @@
           <div class="step-head">
             <span class="step-index">1</span>
             <div class="step-copy">
-              <h2>Flash</h2>
-              <p>Pick a mode and start.</p>
+              <h2>Install Firmware</h2>
+              <p>Select source, check route status, then flash.</p>
             </div>
           </div>
 
@@ -399,15 +437,30 @@
             <label class="toggle">
               <input type="checkbox" id="ghproxy-toggle">
               <span>
-                <strong>Use <code>gh-proxy.org</code></strong>
+                <strong>Use <code>gh-proxy</code> network</strong>
               </span>
             </label>
             <div class="summary" id="mode-summary">Current mode: Preserve Data. LittleFS at <code>0x310000</code> will not be overwritten.</div>
             <p class="release-note" id="release-note">Loading GitHub release assets…</p>
+            <label class="file-picker">
+              <span>Optional local release files</span>
+              <input id="local-release-files" type="file" accept=".bin,application/octet-stream" multiple>
+              <span class="file-button">Select Release Files</span>
+              <small>Upload <code>bootloader.bin</code>, <code>partitions.bin</code>, <code>firmware.bin</code> (and <code>littlefs.bin</code> for Full Restore) to flash even if proxy or release links fail. File names are matched case-insensitively.</small>
+            </label>
+            <div class="status-text" id="local-release-status">Using online release files by default.</div>
           <div class="meta-grid">
             <div class="meta-item">
               <span>Build Time</span>
               <strong id="build-date">Checking…</strong>
+            </div>
+            <div class="meta-item">
+              <span>API Route</span>
+              <strong id="api-proxy-status">Checking…</strong>
+            </div>
+            <div class="meta-item">
+              <span>Release Asset Route</span>
+              <strong id="asset-proxy-status">Idle</strong>
             </div>
           </div>
 
@@ -416,6 +469,7 @@
           </div>
           <progress class="progress" id="flash-progress" value="0" max="100" hidden></progress>
           <div class="status-text" id="flash-status">Ready to flash.</div>
+          </div>
         </section>
 
         <section class="step">
@@ -423,7 +477,7 @@
             <span class="step-index">2</span>
             <div class="step-copy">
               <h2>Backup / Restore</h2>
-              <p>Pick a scope.</p>
+              <p>Optional data tools.</p>
             </div>
           </div>
 
@@ -461,10 +515,8 @@
               <label class="file-picker">
                 <span>Backup file</span>
                 <input id="restore-file" type="file" accept=".bin,application/octet-stream">
+                <span class="file-button">Select Backup File</span>
               </label>
-              <div class="actions">
-                <button id="restore-button" type="button">Upload and Restore</button>
-              </div>
               <progress class="progress" id="restore-progress" value="0" max="100" hidden></progress>
               <div class="status-text" id="restore-status">Choose a backup file to restore.</div>
             </div>
@@ -499,11 +551,19 @@
       erase: "./manifest-full.json",
     };
     const githubDownloadPrefix = "https://github.com/";
-    const firmwareProxyPrefix = "https://gh-proxy.org/";
+    const firmwareProxyMirrors = [
+      { prefix: "https://gh-proxy.org/", label: "gh-proxy.org", status: "ghproxy" },
+      { prefix: "https://edgeone.gh-proxy.org/", label: "edgeone.gh-proxy.org", status: "edgeone" },
+      { prefix: "https://cdn.gh-proxy.org/", label: "cdn.gh-proxy.org", status: "cdn" },
+      { prefix: "https://hk.gh-proxy.org/", label: "hk.gh-proxy.org", status: "hk" },
+    ];
+    const firmwareProxyPrefixes = firmwareProxyMirrors.map((mirror) => mirror.prefix);
+    const firmwareProxyPrefix = firmwareProxyMirrors[0].prefix;
     const akamsProxyPrefix = "https://github.akams.cn/";
     const releaseApi = "https://api.github.com/repos/shiftz300/CYDnote/releases/tags/latest";
     const releaseApiCandidates = [
       { url: releaseApi, label: "GitHub API" },
+      ...firmwareProxyMirrors.map((mirror) => ({ url: `${mirror.prefix}${releaseApi}`, label: `${mirror.label} API mirror` })),
       { url: `${akamsProxyPrefix}${releaseApi}`, label: "github.akams.cn API mirror" },
     ];
     const requiredByMode = {
@@ -530,16 +590,31 @@
     };
     const MAX_LOG_ENTRIES = 200;
     const allowedLogSources = new Set(["system", "flash", "backup", "restore", "release"]);
+    const assetRouteStatus = {
+      directPreferred: "Direct GitHub (preferred)",
+      proxyPreferred: "gh-proxy.org (preferred)",
+      direct: "Direct GitHub",
+      ghproxy: "gh-proxy.org",
+      edgeone: "edgeone.gh-proxy.org",
+      cdn: "cdn.gh-proxy.org",
+      hk: "hk.gh-proxy.org",
+      akams: "github.akams.cn",
+      local: "Local Upload",
+    };
+    const proxyStatusByPrefix = new Map(firmwareProxyMirrors.map((mirror) => [mirror.prefix, assetRouteStatus[mirror.status]]));
 
     const flashButton = document.getElementById("flash-button");
     const backupButton = document.getElementById("backup-button");
-    const restoreButton = document.getElementById("restore-button");
     const restoreFileInput = document.getElementById("restore-file");
+    const localReleaseInput = document.getElementById("local-release-files");
+    const localReleaseStatus = document.getElementById("local-release-status");
     const summary = document.getElementById("mode-summary");
     const flashProgress = document.getElementById("flash-progress");
     const flashStatus = document.getElementById("flash-status");
     const releaseNote = document.getElementById("release-note");
     const buildDate = document.getElementById("build-date");
+    const apiProxyStatus = document.getElementById("api-proxy-status");
+    const assetProxyStatus = document.getElementById("asset-proxy-status");
     const ghproxyToggle = document.getElementById("ghproxy-toggle");
     const eraseRadio = document.querySelector("input[value='erase']");
     const eraseOption = eraseRadio.closest(".option");
@@ -560,6 +635,7 @@
     let restoreInProgress = false;
     let flashAvailable = false;
     let esptoolModulePromise = null;
+    let localReleaseFiles = new Map();
     const pageLocale = document.documentElement.lang || navigator.language || undefined;
 
     function toHex(value) {
@@ -596,6 +672,31 @@
         return `${fallback} (${error.message})`;
       }
       return fallback;
+    }
+
+    function extractFileNameFromPath(path, fallbackName) {
+      if (typeof path !== "string") return fallbackName;
+      const sanitizedPath = path.split("#")[0].split("?")[0];
+      return sanitizedPath.split("/").pop() || fallbackName;
+    }
+
+    function setApiProxyStatus(text) {
+      apiProxyStatus.textContent = text;
+    }
+
+    function setAssetProxyStatus(text) {
+      assetProxyStatus.textContent = text;
+    }
+
+    function resolveAssetRouteStatus(url) {
+      if (typeof url !== "string") return assetRouteStatus.direct;
+      if (url.startsWith(`${akamsProxyPrefix}${githubDownloadPrefix}`)) return assetRouteStatus.akams;
+      for (const [prefix, status] of proxyStatusByPrefix.entries()) {
+        if (url.startsWith(`${prefix}${githubDownloadPrefix}`)) {
+          return status;
+        }
+      }
+      return assetRouteStatus.direct;
     }
 
     function logLine(message, level = "info", source = "system") {
@@ -689,10 +790,21 @@
 
     function syncActionButtons() {
       const busy = anyTransferInProgress();
-      setFlashButtonEnabled(serialSupported && flashAvailable && !!currentManifest && !busy);
+      const mode = getSelectedMode();
+      const localReady = requiredByMode[mode].every((name) => localReleaseFiles.has(name));
+      setFlashButtonEnabled(serialSupported && (flashAvailable || localReady) && !!currentManifest && !busy);
       backupButton.disabled = !serialSupported || busy;
-      restoreButton.disabled = !serialSupported || busy || !restoreFileInput.files?.length;
       restoreFileInput.disabled = busy;
+    }
+
+    function updateBackupActionLabel() {
+      const scope = document.querySelector("input[name='backup-scope']:checked").value;
+      const hasRestoreFile = !!restoreFileInput.files?.length;
+      if (hasRestoreFile) {
+        backupButton.textContent = scope === "full" ? "Restore Full Backup" : "Restore Backup";
+      } else {
+        backupButton.textContent = scope === "full" ? "Download Full Backup" : "Download Backup";
+      }
     }
 
     function getSelectedMode() {
@@ -712,13 +824,26 @@
 
     function updateBackupSummary({ shouldLog = true } = {}) {
       const target = getSelectedBackupTarget();
-      const scope = document.querySelector("input[name='backup-scope']:checked").value;
       backupSummary.textContent = `${target.label}: ${toHex(target.offset)} · ${formatSize(target.size)}`;
-      backupButton.textContent = scope === "full" ? "Download Full Backup" : "Download Backup";
-      restoreButton.textContent = scope === "full" ? "Restore Full Backup" : "Upload and Restore";
+      updateBackupActionLabel();
       if (shouldLog) {
         logLine(`Scope changed to ${target.label}.`, "info", "backup");
       }
+    }
+
+    function updateLocalReleaseSummary() {
+      const files = Array.from(localReleaseInput.files || []);
+      localReleaseFiles = new Map(files.map((file) => [file.name.toLowerCase(), file]));
+      const modeRequiredNames = requiredByMode[getSelectedMode()];
+      const allSupportedNames = Array.from(new Set(Object.values(requiredByMode).flat()));
+      if (!files.length) {
+        localReleaseStatus.textContent = "Using online release files by default.";
+        return;
+      }
+      const recognized = allSupportedNames.filter((name) => localReleaseFiles.has(name));
+      localReleaseStatus.textContent = recognized.length
+        ? `Local release files loaded: ${recognized.join(", ")}.`
+        : `No recognized release file names found. Required for ${getSelectedMode() === "erase" ? "Full Restore" : "Preserve Data"}: ${modeRequiredNames.join(", ")}.`;
     }
 
     async function updateMode(mode) {
@@ -740,6 +865,12 @@
       }
       currentManifest = manifest;
       summary.textContent = summaryText[mode];
+      if (localReleaseFiles.size) {
+        updateLocalReleaseSummary();
+      }
+      if (!localReleaseFiles.size) {
+        setAssetProxyStatus(ghproxyToggle.checked ? assetRouteStatus.proxyPreferred : assetRouteStatus.directPreferred);
+      }
       logLine(`Flash mode switched to ${mode === "preserve" ? "Preserve Data" : "Full Restore"}.`, "info", "flash");
     }
 
@@ -782,12 +913,14 @@
             headers: { Accept: "application/vnd.github+json" },
           });
           if (!response.ok) throw new Error(`${source.label} ${response.status}`);
+          setApiProxyStatus(source.label);
           return await response.json();
         } catch (error) {
           lastError = error;
           logLine("Release check failed, retrying…", "warn", "release");
         }
       }
+      setApiProxyStatus("Unavailable");
       throw lastError || new Error("Failed to load release metadata");
     }
 
@@ -797,10 +930,12 @@
         const assetNames = new Set((release.assets || []).map((asset) => asset.name));
         const preserveReady = requiredByMode.preserve.every((name) => assetNames.has(name));
         const eraseReady = requiredByMode.erase.every((name) => assetNames.has(name));
+        const localPreserveReady = requiredByMode.preserve.every((name) => localReleaseFiles.has(name));
+        const localEraseReady = requiredByMode.erase.every((name) => localReleaseFiles.has(name));
 
         updateBuildMetadata(release);
 
-        if (!preserveReady) {
+        if (!preserveReady && !localPreserveReady) {
           flashAvailable = false;
           updateReleaseNote("The latest release is missing required firmware files. Flashing is unavailable.", true);
           markEraseUnavailable();
@@ -814,7 +949,7 @@
         const buildStamp = newestAsset ? formatTimestamp(newestAsset.updated_at || newestAsset.created_at) : "Unknown";
 
         flashAvailable = true;
-        if (eraseReady) {
+        if (eraseReady || localEraseReady) {
           releaseNoteBase = `Ready. Build time: ${buildStamp}.`;
           updateReleaseNote(releaseNoteBase);
         } else {
@@ -899,6 +1034,70 @@
       return new Uint8Array(await file.arrayBuffer());
     }
 
+    function getFlashDownloadCandidates(url) {
+      const candidates = [];
+      const candidateSet = new Set();
+      if (typeof url !== "string" || !url.trim()) return candidates;
+
+      const pushCandidate = (value) => {
+        if (typeof value === "string" && value.trim() && !candidateSet.has(value)) {
+          candidateSet.add(value);
+          candidates.push(value);
+        }
+      };
+
+      pushCandidate(url);
+      if (url.startsWith(githubDownloadPrefix)) {
+        firmwareProxyPrefixes.forEach((prefix) => pushCandidate(`${prefix}${url}`));
+        pushCandidate(`${akamsProxyPrefix}${url}`);
+      } else if (firmwareProxyPrefixes.some((prefix) => url.startsWith(`${prefix}${githubDownloadPrefix}`))) {
+        const matchedPrefix = firmwareProxyPrefixes.find((prefix) => url.startsWith(`${prefix}${githubDownloadPrefix}`));
+        const directUrl = url.slice(matchedPrefix.length);
+        pushCandidate(directUrl);
+        firmwareProxyPrefixes.forEach((prefix) => {
+          if (prefix !== matchedPrefix) {
+            pushCandidate(`${prefix}${directUrl}`);
+          }
+        });
+        pushCandidate(`${akamsProxyPrefix}${directUrl}`);
+      } else if (url.startsWith(`${akamsProxyPrefix}${githubDownloadPrefix}`)) {
+        const directUrl = url.slice(akamsProxyPrefix.length);
+        pushCandidate(directUrl);
+        firmwareProxyPrefixes.forEach((prefix) => pushCandidate(`${prefix}${directUrl}`));
+      }
+
+      return candidates;
+    }
+
+    async function downloadPartData(partPath, partFileName) {
+      const candidates = getFlashDownloadCandidates(partPath);
+      let lastError = null;
+
+      for (let index = 0; index < candidates.length; index += 1) {
+        const candidate = candidates[index];
+        const attemptLabel = index === 0 ? "primary URL" : `fallback URL #${index}`;
+        try {
+          const response = await fetch(candidate);
+          if (!response.ok) {
+            throw new Error(`${response.status} ${response.statusText}`);
+          }
+          setAssetProxyStatus(resolveAssetRouteStatus(candidate));
+          if (candidate !== partPath) {
+            logLine(`Downloaded ${partFileName} via ${attemptLabel}.`, "info", "flash");
+          }
+          return new Uint8Array(await response.arrayBuffer());
+        } catch (error) {
+          lastError = error;
+          if (index < candidates.length - 1) {
+            logLine(`${partFileName} failed on ${attemptLabel}, retrying fallback...`, "warn", "flash");
+          }
+        }
+      }
+
+      const manualLink = candidates.find((candidate) => candidate.startsWith(githubDownloadPrefix)) || partPath;
+      throw new Error(`Failed to download ${partFileName}. Manual download link: ${manualLink}. Upload the file with the local release file picker above. ${formatErrorMessage(lastError, "Download error details")}`);
+    }
+
     async function downloadFlashFiles() {
       const build = currentManifest?.builds?.[0];
       const parts = build?.parts || [];
@@ -909,15 +1108,22 @@
       const files = [];
       for (let index = 0; index < parts.length; index += 1) {
         const part = parts[index];
-        const partFileName = typeof part.path === "string" ? part.path.split("/").pop() || `part-${index + 1}.bin` : `part-${index + 1}.bin`;
-        setFlashStatus(`Downloading ${partFileName} (${index + 1}/${parts.length})...`, false, "wait");
-        const response = await fetch(part.path);
-        if (!response.ok) {
-          throw new Error(`Cannot download ${partFileName}: ${response.status} ${response.statusText}`);
+        const partFileName = extractFileNameFromPath(part.path, `part-${index + 1}.bin`);
+        const localFile = localReleaseFiles.get(partFileName.toLowerCase());
+        let data;
+        if (localFile) {
+          setFlashStatus(`Loading ${partFileName} from local release file (${index + 1}/${parts.length})...`, false, "wait");
+          setAssetProxyStatus(assetRouteStatus.local);
+          data = await readFileAsUint8Array(localFile);
+          logLine(`Loaded local ${partFileName} (${formatSize(data.length)}).`, "info", "flash");
+        } else {
+          setFlashStatus(`Downloading ${partFileName} (${index + 1}/${parts.length})...`, false, "wait");
+          data = await downloadPartData(part.path, partFileName);
         }
-        const data = new Uint8Array(await response.arrayBuffer());
         files.push({ name: partFileName, data, address: part.offset });
-        logLine(`Downloaded ${partFileName} (${formatSize(data.length)}).`, "info", "flash");
+        if (!localFile) {
+          logLine(`Downloaded ${partFileName} (${formatSize(data.length)}).`, "info", "flash");
+        }
       }
       return files;
     }
@@ -1079,6 +1285,14 @@
       }
     }
 
+    function handleBackupAction() {
+      if (restoreFileInput.files?.length) {
+        handleRestore();
+        return;
+      }
+      handleBackup();
+    }
+
     flashModeRadios.forEach((radio) => {
       radio.addEventListener("change", async () => {
         if (!radio.checked) return;
@@ -1117,6 +1331,7 @@
       const file = restoreFileInput.files?.[0];
       if (!file) {
         setRestoreStatus("Choose a backup file to restore.");
+        updateBackupActionLabel();
         syncActionButtons();
         return;
       }
@@ -1136,14 +1351,33 @@
       } else {
         setRestoreStatus(`Selected ${file.name} for ${target.label} restore.`, false, "info");
       }
+      updateBackupActionLabel();
+      syncActionButtons();
+    });
+
+    localReleaseInput.addEventListener("change", () => {
+      updateLocalReleaseSummary();
+      const selectedMode = getSelectedMode();
+      const localReady = requiredByMode[selectedMode].every((name) => localReleaseFiles.has(name));
+      if (localReady) {
+        flashAvailable = true;
+        updateReleaseNote("Using uploaded local release files for flashing.");
+      }
+      if (localReleaseFiles.size) {
+        setAssetProxyStatus(assetRouteStatus.local);
+      } else {
+        setAssetProxyStatus(ghproxyToggle.checked ? assetRouteStatus.proxyPreferred : assetRouteStatus.directPreferred);
+      }
       syncActionButtons();
     });
 
     flashButton.addEventListener("click", handleFlash);
-    backupButton.addEventListener("click", handleBackup);
-    restoreButton.addEventListener("click", handleRestore);
+    backupButton.addEventListener("click", handleBackupAction);
 
     logLine("Initializing page…", "wait");
+    setApiProxyStatus("Checking…");
+    setAssetProxyStatus("Checking…");
+    updateLocalReleaseSummary();
     updateBackupSummary({ shouldLog: false });
     if (!serialSupported) {
       setFlashStatus("Web Serial is not supported in this browser. Flashing is unavailable.", true);
