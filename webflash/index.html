@@ -43,7 +43,7 @@
       padding: 20px;
     }
     .hero {
-      margin-bottom: 20px;
+      margin-bottom: 14px;
     }
     h1 {
       margin: 0 0 10px;
@@ -180,7 +180,7 @@
       color: var(--cyd-error);
     }
     .meta-grid {
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     }
     .meta-item {
       padding: 12px 14px;
@@ -365,7 +365,7 @@
     <div class="card">
       <div class="hero">
         <h1>CYDnote Web Flasher</h1>
-        <p>For <code>ESP32-2432S028/ESP32-2432S028R (CYD)</code>. Use Chrome or Edge with Web Serial support, connect the board by USB, then follow the steps below.</p>
+        <p>For <code>ESP32-2432S028/ESP32-2432S028R (CYD)</code>. Use Chrome/Edge and connect by USB.</p>
       </div>
 
       <div class="flow">
@@ -373,8 +373,8 @@
           <div class="step-head">
             <span class="step-index">1</span>
             <div class="step-copy">
-              <h2>Choose how to flash</h2>
-              <p>Pick a firmware mode, then optionally enable the download mirror.</p>
+              <h2>Flash</h2>
+              <p>Pick a mode and start.</p>
             </div>
           </div>
 
@@ -383,14 +383,14 @@
               <input type="radio" name="flash-mode" value="preserve" checked>
               <span>
                 <strong>Preserve Data</strong>
-                Updates bootloader, partitions, and firmware while leaving LittleFS data unchanged.
+                Updates firmware without overwriting LittleFS.
               </span>
             </label>
             <label class="option">
               <input type="radio" name="flash-mode" value="erase">
               <span>
                 <strong>Full Restore</strong>
-                Also writes <code>littlefs.bin</code> and overwrites local on-device data.
+                Writes <code>littlefs.bin</code> and clears local data.
               </span>
             </label>
           </div>
@@ -399,36 +399,15 @@
             <label class="toggle">
               <input type="checkbox" id="ghproxy-toggle">
               <span>
-                <strong>Use optional third-party <code>gh-proxy.org</code> for firmware downloads</strong>
-                <small>If direct GitHub API access fails, this page will still retry release metadata through <code>github.akams.cn</code>.</small>
+                <strong>Use <code>gh-proxy.org</code></strong>
               </span>
             </label>
             <div class="summary" id="mode-summary">Current mode: Preserve Data. LittleFS at <code>0x310000</code> will not be overwritten.</div>
             <p class="release-note" id="release-note">Loading GitHub release assets…</p>
-          </div>
-        </section>
-
-        <section class="step">
-          <div class="step-head">
-            <span class="step-index">2</span>
-            <div class="step-copy">
-              <h2>Review release info and flash</h2>
-              <p>The page reads firmware from the repository <code>latest</code> release and flashes it directly in-page.</p>
-            </div>
-          </div>
-
           <div class="meta-grid">
             <div class="meta-item">
               <span>Build Time</span>
               <strong id="build-date">Checking…</strong>
-            </div>
-            <div class="meta-item">
-              <span>Release Time</span>
-              <strong id="release-date">Checking…</strong>
-            </div>
-            <div class="meta-item">
-              <span>Release Tag</span>
-              <strong id="release-tag">latest</strong>
             </div>
           </div>
 
@@ -441,10 +420,10 @@
 
         <section class="step">
           <div class="step-head">
-            <span class="step-index">3</span>
+            <span class="step-index">2</span>
             <div class="step-copy">
-              <h2>Back up or restore device data</h2>
-              <p>Use one scope selector for both downloading a backup and restoring a previously saved raw image.</p>
+              <h2>Backup / Restore</h2>
+              <p>Pick a scope.</p>
             </div>
           </div>
 
@@ -453,14 +432,14 @@
               <input type="radio" name="backup-scope" value="littlefs" checked>
               <span>
                 <strong>LittleFS Scope</strong>
-                Partition at <code>0x310000</code> for user data only.
+                User data at <code>0x310000</code>.
               </span>
             </label>
             <label class="option">
               <input type="radio" name="backup-scope" value="full">
               <span>
                 <strong>Full Flash Scope</strong>
-                Entire 4MB raw flash from <code>0x000000</code>.
+                Whole 4MB flash.
               </span>
             </label>
           </div>
@@ -470,7 +449,6 @@
           <div class="tool-grid">
             <div class="tool-card">
               <strong>Download Backup</strong>
-              <p>Reads the selected scope from the device and downloads a raw <code>.bin</code> image.</p>
               <div class="actions">
                 <button id="backup-button" type="button">Download Backup</button>
               </div>
@@ -480,7 +458,6 @@
 
             <div class="tool-card">
               <strong>Upload and Restore Backup</strong>
-              <p>Choose a previously downloaded backup file, then flash it back to the selected scope.</p>
               <label class="file-picker">
                 <span>Backup file</span>
                 <input id="restore-file" type="file" accept=".bin,application/octet-stream">
@@ -496,10 +473,9 @@
 
         <section class="step">
           <div class="step-head">
-            <span class="step-index">4</span>
+            <span class="step-index">3</span>
             <div class="step-copy">
-              <h2>Status terminal</h2>
-              <p>Live logs are color highlighted by severity and action source.</p>
+              <h2>Log</h2>
             </div>
           </div>
 
@@ -512,10 +488,8 @@
       <ul class="notes">
         <li>If auto-download mode fails, hold <code>BOOT</code>, press <code>RESET</code>, then retry.</li>
         <li>Use Preserve Data only when the partition layout has not changed.</li>
-        <li>Build time is based on firmware asset upload time, not only release publish time.</li>
-        <li>Backup and restore files are raw <code>.bin</code> images and must match the selected scope exactly.</li>
+        <li>Backup files must match the selected scope.</li>
       </ul>
-      <p class="hint">Powered by <code>esptool-js</code>. Manifests are preconfigured for this repository's partition layout and GitHub release assets.</p>
     </div>
   </main>
 
@@ -551,8 +525,8 @@
       },
     };
     const summaryText = {
-      preserve: "Current mode: Preserve Data. LittleFS at 0x310000 will not be overwritten.",
-      erase: "Current mode: Full Restore. LittleFS at 0x310000 will be overwritten.",
+      preserve: "Mode: Preserve Data. LittleFS stays unchanged.",
+      erase: "Mode: Full Restore. LittleFS will be overwritten.",
     };
     const MAX_LOG_ENTRIES = 200;
     const allowedLogSources = new Set(["system", "flash", "backup", "restore", "release"]);
@@ -566,8 +540,6 @@
     const flashStatus = document.getElementById("flash-status");
     const releaseNote = document.getElementById("release-note");
     const buildDate = document.getElementById("build-date");
-    const releaseDate = document.getElementById("release-date");
-    const releaseTag = document.getElementById("release-tag");
     const ghproxyToggle = document.getElementById("ghproxy-toggle");
     const eraseRadio = document.querySelector("input[value='erase']");
     const eraseOption = eraseRadio.closest(".option");
@@ -705,10 +677,7 @@
 
     function updateReleaseNote(text, isError = false) {
       releaseNoteBase = text;
-      const mirrorSuffix = " Firmware downloads will use the gh-proxy.org mirror.";
-      releaseNote.textContent = ghproxyToggle.checked
-        ? `${text}${text.endsWith(".") ? "" : "."}${mirrorSuffix}`
-        : text;
+      releaseNote.textContent = text;
       releaseNote.classList.toggle("error", isError);
       logLine(releaseNote.textContent, isError ? "error" : "info", "release");
     }
@@ -744,7 +713,7 @@
     function updateBackupSummary({ shouldLog = true } = {}) {
       const target = getSelectedBackupTarget();
       const scope = document.querySelector("input[name='backup-scope']:checked").value;
-      backupSummary.textContent = `Current scope: ${target.label} (start ${toHex(target.offset)}, size ${formatSize(target.size)}).`;
+      backupSummary.textContent = `${target.label}: ${toHex(target.offset)} · ${formatSize(target.size)}`;
       backupButton.textContent = scope === "full" ? "Download Full Backup" : "Download Backup";
       restoreButton.textContent = scope === "full" ? "Restore Full Backup" : "Upload and Restore";
       if (shouldLog) {
@@ -803,8 +772,6 @@
         : null;
 
       buildDate.textContent = newestAssetDate ? formatTimestamp(newestAssetDate.toISOString()) : "Unknown";
-      releaseDate.textContent = formatTimestamp(release.published_at || release.created_at);
-      releaseTag.textContent = release.tag_name || "latest";
     }
 
     async function fetchReleaseInfoWithFallback() {
@@ -815,13 +782,10 @@
             headers: { Accept: "application/vnd.github+json" },
           });
           if (!response.ok) throw new Error(`${source.label} ${response.status}`);
-          return {
-            release: await response.json(),
-            sourceLabel: source.label,
-          };
+          return await response.json();
         } catch (error) {
           lastError = error;
-          logLine(`Failed to load release metadata (${source.label}): ${error.message}`, "warn", "release");
+          logLine("Release check failed, retrying…", "warn", "release");
         }
       }
       throw lastError || new Error("Failed to load release metadata");
@@ -829,7 +793,7 @@
 
     async function loadReleaseInfo() {
       try {
-        const { release, sourceLabel } = await fetchReleaseInfoWithFallback();
+        const release = await fetchReleaseInfoWithFallback();
         const assetNames = new Set((release.assets || []).map((asset) => asset.name));
         const preserveReady = requiredByMode.preserve.every((name) => assetNames.has(name));
         const eraseReady = requiredByMode.erase.every((name) => assetNames.has(name));
@@ -850,21 +814,19 @@
         const buildStamp = newestAsset ? formatTimestamp(newestAsset.updated_at || newestAsset.created_at) : "Unknown";
 
         flashAvailable = true;
-        const sourceSuffix = sourceLabel === "GitHub API" ? "" : ` (metadata source: ${sourceLabel})`;
         if (eraseReady) {
-          releaseNoteBase = `Loaded release: ${release.name || "Latest Build"}. Firmware build time: ${buildStamp}.${sourceSuffix}`;
+          releaseNoteBase = `Ready. Build time: ${buildStamp}.`;
           updateReleaseNote(releaseNoteBase);
         } else {
-          releaseNoteBase = `Loaded release: ${release.name || "Latest Build"}, but littlefs.bin is missing. Only Preserve Data is available.${sourceSuffix}`;
+          releaseNoteBase = "Ready. Preserve Data only.";
           updateReleaseNote(releaseNoteBase, true);
           markEraseUnavailable();
         }
         syncActionButtons();
       } catch (error) {
         buildDate.textContent = "Unknown";
-        releaseDate.textContent = "Unknown";
         flashAvailable = true;
-        updateReleaseNote(`Failed to load release metadata: ${error.message}. Basic flashing capability is kept.`, true);
+        updateReleaseNote("Release check failed. Flashing is still available.", true);
         markEraseUnavailable();
         syncActionButtons();
       }
