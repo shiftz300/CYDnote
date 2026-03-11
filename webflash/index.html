@@ -244,12 +244,31 @@
       font-weight: 600;
     }
     .file-picker input[type="file"] {
-      width: 100%;
-      color: var(--cyd-text-soft);
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
     }
     .file-picker small {
       color: var(--cyd-text-dim);
       font-weight: 500;
+    }
+    .file-button {
+      appearance: none;
+      width: 100%;
+      border: 1px solid var(--cyd-primary-soft);
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #fff;
+      background: var(--cyd-panel-strong);
+      cursor: pointer;
+      text-align: center;
+      transition: background-color 0.18s ease, border-color 0.18s ease;
+    }
+    .file-button:hover {
+      background: rgba(92, 184, 255, 0.14);
+      border-color: var(--cyd-primary);
     }
     .actions {
       margin-top: 2px;
@@ -283,10 +302,7 @@
       accent-color: var(--cyd-primary);
     }
     .log-panel {
-      border: 1px solid var(--cyd-border);
-      border-radius: 10px;
-      background: #0b1220;
-      padding: 12px;
+      padding: 0;
     }
     #log-window {
       display: grid;
@@ -295,6 +311,7 @@
       max-height: 320px;
       overflow: auto;
       margin: 0;
+      padding: 10px 0;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 0.84rem;
       line-height: 1.5;
@@ -304,10 +321,7 @@
       grid-template-columns: auto auto 1fr;
       gap: 8px;
       align-items: start;
-      padding: 8px 10px;
-      border-radius: 8px;
-      background: rgba(15, 23, 42, 0.92);
-      border: 1px solid rgba(51, 65, 85, 0.85);
+      padding: 2px 0;
     }
     .log-time {
       color: #94a3b8;
@@ -389,7 +403,7 @@
     <div class="card">
       <div class="hero">
         <h1>CYDnote Web Flasher</h1>
-        <p>For <code>ESP32-2432S028/ESP32-2432S028R (CYD)</code>. Use Chrome/Edge and connect by USB.</p>
+        <p>Installer-style flow for <code>ESP32-2432S028/ESP32-2432S028R (CYD)</code>. Use Chrome/Edge and connect by USB.</p>
       </div>
 
       <div class="flow">
@@ -397,8 +411,8 @@
           <div class="step-head">
             <span class="step-index">1</span>
             <div class="step-copy">
-              <h2>Flash</h2>
-              <p>Pick a mode and start.</p>
+              <h2>Install Firmware</h2>
+              <p>Select source, check route status, then flash.</p>
             </div>
           </div>
 
@@ -423,7 +437,7 @@
             <label class="toggle">
               <input type="checkbox" id="ghproxy-toggle">
               <span>
-                <strong>Use <code>gh-proxy.org</code></strong>
+                <strong>Use <code>gh-proxy</code> network</strong>
               </span>
             </label>
             <div class="summary" id="mode-summary">Current mode: Preserve Data. LittleFS at <code>0x310000</code> will not be overwritten.</div>
@@ -431,6 +445,7 @@
             <label class="file-picker">
               <span>Optional local release files</span>
               <input id="local-release-files" type="file" accept=".bin,application/octet-stream" multiple>
+              <span class="file-button">Select Release Files</span>
               <small>Upload <code>bootloader.bin</code>, <code>partitions.bin</code>, <code>firmware.bin</code> (and <code>littlefs.bin</code> for Full Restore) to flash even if proxy or release links fail. File names are matched case-insensitively.</small>
             </label>
             <div class="status-text" id="local-release-status">Using online release files by default.</div>
@@ -454,6 +469,7 @@
           </div>
           <progress class="progress" id="flash-progress" value="0" max="100" hidden></progress>
           <div class="status-text" id="flash-status">Ready to flash.</div>
+          </div>
         </section>
 
         <section class="step">
@@ -461,7 +477,7 @@
             <span class="step-index">2</span>
             <div class="step-copy">
               <h2>Backup / Restore</h2>
-              <p>Pick a scope.</p>
+              <p>Optional data tools.</p>
             </div>
           </div>
 
@@ -499,6 +515,7 @@
               <label class="file-picker">
                 <span>Backup file</span>
                 <input id="restore-file" type="file" accept=".bin,application/octet-stream">
+                <span class="file-button">Select Backup File</span>
               </label>
               <progress class="progress" id="restore-progress" value="0" max="100" hidden></progress>
               <div class="status-text" id="restore-status">Choose a backup file to restore.</div>
@@ -534,11 +551,18 @@
       erase: "./manifest-full.json",
     };
     const githubDownloadPrefix = "https://github.com/";
-    const firmwareProxyPrefix = "https://gh-proxy.org/";
+    const firmwareProxyPrefixes = [
+      "https://gh-proxy.org/",
+      "https://edgeone.gh-proxy.org/",
+      "https://cdn.gh-proxy.org/",
+      "https://hk.gh-proxy.org/",
+    ];
+    const firmwareProxyPrefix = firmwareProxyPrefixes[0];
     const akamsProxyPrefix = "https://github.akams.cn/";
     const releaseApi = "https://api.github.com/repos/shiftz300/CYDnote/releases/tags/latest";
     const releaseApiCandidates = [
       { url: releaseApi, label: "GitHub API" },
+      ...firmwareProxyPrefixes.map((prefix) => ({ url: `${prefix}${releaseApi}`, label: `${new URL(prefix).host} API mirror` })),
       { url: `${akamsProxyPrefix}${releaseApi}`, label: "github.akams.cn API mirror" },
     ];
     const requiredByMode = {
@@ -570,6 +594,9 @@
       proxyPreferred: "gh-proxy.org (preferred)",
       direct: "Direct GitHub",
       ghproxy: "gh-proxy.org",
+      edgeone: "edgeone.gh-proxy.org",
+      cdn: "cdn.gh-proxy.org",
+      hk: "hk.gh-proxy.org",
       akams: "github.akams.cn",
       local: "Local Upload",
     };
@@ -657,6 +684,16 @@
 
     function setAssetProxyStatus(text) {
       assetProxyStatus.textContent = text;
+    }
+
+    function resolveAssetRouteStatus(url) {
+      if (typeof url !== "string") return assetRouteStatus.direct;
+      if (url.startsWith(`${akamsProxyPrefix}${githubDownloadPrefix}`)) return assetRouteStatus.akams;
+      if (url.startsWith(`${firmwareProxyPrefixes[0]}${githubDownloadPrefix}`)) return assetRouteStatus.ghproxy;
+      if (url.startsWith(`${firmwareProxyPrefixes[1]}${githubDownloadPrefix}`)) return assetRouteStatus.edgeone;
+      if (url.startsWith(`${firmwareProxyPrefixes[2]}${githubDownloadPrefix}`)) return assetRouteStatus.cdn;
+      if (url.startsWith(`${firmwareProxyPrefixes[3]}${githubDownloadPrefix}`)) return assetRouteStatus.hk;
+      return assetRouteStatus.direct;
     }
 
     function logLine(message, level = "info", source = "system") {
@@ -1002,16 +1039,22 @@
 
       pushCandidate(url);
       if (url.startsWith(githubDownloadPrefix)) {
-        pushCandidate(`${firmwareProxyPrefix}${url}`);
+        firmwareProxyPrefixes.forEach((prefix) => pushCandidate(`${prefix}${url}`));
         pushCandidate(`${akamsProxyPrefix}${url}`);
-      } else if (url.startsWith(`${firmwareProxyPrefix}${githubDownloadPrefix}`)) {
-        const directUrl = url.slice(firmwareProxyPrefix.length);
+      } else if (firmwareProxyPrefixes.some((prefix) => url.startsWith(`${prefix}${githubDownloadPrefix}`))) {
+        const matchedPrefix = firmwareProxyPrefixes.find((prefix) => url.startsWith(`${prefix}${githubDownloadPrefix}`)) || firmwareProxyPrefix;
+        const directUrl = url.slice(matchedPrefix.length);
         pushCandidate(directUrl);
+        firmwareProxyPrefixes.forEach((prefix) => {
+          if (prefix !== matchedPrefix) {
+            pushCandidate(`${prefix}${directUrl}`);
+          }
+        });
         pushCandidate(`${akamsProxyPrefix}${directUrl}`);
       } else if (url.startsWith(`${akamsProxyPrefix}${githubDownloadPrefix}`)) {
         const directUrl = url.slice(akamsProxyPrefix.length);
         pushCandidate(directUrl);
-        pushCandidate(`${firmwareProxyPrefix}${directUrl}`);
+        firmwareProxyPrefixes.forEach((prefix) => pushCandidate(`${prefix}${directUrl}`));
       }
 
       return candidates;
@@ -1029,13 +1072,7 @@
           if (!response.ok) {
             throw new Error(`${response.status} ${response.statusText}`);
           }
-          if (candidate.startsWith(`${firmwareProxyPrefix}${githubDownloadPrefix}`)) {
-            setAssetProxyStatus(assetRouteStatus.ghproxy);
-          } else if (candidate.startsWith(`${akamsProxyPrefix}${githubDownloadPrefix}`)) {
-            setAssetProxyStatus(assetRouteStatus.akams);
-          } else {
-            setAssetProxyStatus(assetRouteStatus.direct);
-          }
+          setAssetProxyStatus(resolveAssetRouteStatus(candidate));
           if (candidate !== partPath) {
             logLine(`Downloaded ${partFileName} via ${attemptLabel}.`, "warn", "flash");
           }
