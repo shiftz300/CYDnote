@@ -399,7 +399,7 @@
             <label class="toggle">
               <input type="checkbox" id="ghproxy-toggle">
               <span>
-                <strong>Use <code>gh-proxy.org</code> for firmware downloads</strong>
+                <strong>Use optional third-party <code>gh-proxy.org</code> for firmware downloads</strong>
                 <small>If direct GitHub API access fails, this page will still retry release metadata through <code>github.akams.cn</code>.</small>
               </span>
             </label>
@@ -525,7 +525,7 @@
       erase: "./manifest-full.json",
     };
     const githubDownloadPrefix = "https://github.com/";
-    const ghproxyPrefix = "https://gh-proxy.org/";
+    const firmwareProxyPrefix = "https://gh-proxy.org/";
     const akamsProxyPrefix = "https://github.akams.cn/";
     const releaseApi = "https://api.github.com/repos/shiftz300/CYDnote/releases/tags/latest";
     const releaseApiCandidates = [
@@ -554,6 +554,8 @@
       preserve: "Current mode: Preserve Data. LittleFS at 0x310000 will not be overwritten.",
       erase: "Current mode: Full Restore. LittleFS at 0x310000 will be overwritten.",
     };
+    const MAX_LOG_ENTRIES = 200;
+    const allowedLogSources = new Set(["system", "flash", "backup", "restore", "release"]);
 
     const flashButton = document.getElementById("flash-button");
     const backupButton = document.getElementById("backup-button");
@@ -626,7 +628,8 @@
 
     function logLine(message, level = "info", source = "system") {
       const normalizedLevel = ["info", "success", "warn", "error", "wait"].includes(level) ? level : "info";
-      const normalizedSource = String(source || "system").toLowerCase().replace(/[^a-z0-9_-]/g, "") || "system";
+      const requestedSource = String(source || "system").toLowerCase().replace(/[^a-z0-9_-]/g, "") || "system";
+      const normalizedSource = allowedLogSources.has(requestedSource) ? requestedSource : "system";
       const entry = document.createElement("div");
       entry.className = `log-entry level-${normalizedLevel} source-${normalizedSource}`;
 
@@ -636,7 +639,7 @@
 
       const tag = document.createElement("span");
       tag.className = "log-tag";
-      tag.textContent = normalizedSource === "system" ? normalizedLevel : `${normalizedLevel}/${normalizedSource}`;
+      tag.textContent = `${normalizedLevel}/${normalizedSource}`;
 
       const body = document.createElement("span");
       body.className = "log-message";
@@ -645,7 +648,7 @@
       entry.append(time, tag, body);
       logWindow.append(entry);
 
-      while (logWindow.childElementCount > 200) {
+      while (logWindow.childElementCount > MAX_LOG_ENTRIES) {
         logWindow.firstElementChild?.remove();
       }
 
@@ -735,10 +738,10 @@
       const radio = document.querySelector(`input[name="backup-scope"][value="${scope}"]`);
       if (!radio || radio.checked) return;
       radio.checked = true;
-      updateBackupSummary(shouldLog);
+      updateBackupSummary({ shouldLog });
     }
 
-    function updateBackupSummary(shouldLog = true) {
+    function updateBackupSummary({ shouldLog = true } = {}) {
       const target = getSelectedBackupTarget();
       const scope = document.querySelector("input[name='backup-scope']:checked").value;
       backupSummary.textContent = `Current scope: ${target.label} (start ${toHex(target.offset)}, size ${formatSize(target.size)}).`;
@@ -761,7 +764,7 @@
           parts: (build.parts || []).map((part) => ({
             ...part,
             path: typeof part.path === "string" && part.path.startsWith(githubDownloadPrefix)
-              ? `${ghproxyPrefix}${part.path}`
+              ? `${firmwareProxyPrefix}${part.path}`
               : part.path,
           })),
         }));
@@ -925,7 +928,7 @@
         return "Choose a backup file before starting restore.";
       }
       if (file.size !== target.size) {
-        return `Selected file size ${formatSize(file.size)} does not match ${target.label} size ${formatSize(target.size)}.`;
+        return `Selected file size ${formatSize(file.size)} (${file.size} bytes) does not match ${target.label} size ${formatSize(target.size)} (${target.size} bytes).`;
       }
       return "";
     }
@@ -944,15 +947,15 @@
       const files = [];
       for (let index = 0; index < parts.length; index += 1) {
         const part = parts[index];
-        const name = typeof part.path === "string" ? part.path.split("/").pop() || `part-${index + 1}.bin` : `part-${index + 1}.bin`;
-        setFlashStatus(`Downloading ${name} (${index + 1}/${parts.length})...`, false, "wait");
+        const partFileName = typeof part.path === "string" ? part.path.split("/").pop() || `part-${index + 1}.bin` : `part-${index + 1}.bin`;
+        setFlashStatus(`Downloading ${partFileName} (${index + 1}/${parts.length})...`, false, "wait");
         const response = await fetch(part.path);
         if (!response.ok) {
-          throw new Error(`Cannot download ${name}: ${response.status} ${response.statusText}`);
+          throw new Error(`Cannot download ${partFileName}: ${response.status} ${response.statusText}`);
         }
         const data = new Uint8Array(await response.arrayBuffer());
-        files.push({ name, data, address: part.offset });
-        logLine(`Downloaded ${name} (${formatSize(data.length)}).`, "info", "flash");
+        files.push({ name: partFileName, data, address: part.offset });
+        logLine(`Downloaded ${partFileName} (${formatSize(data.length)}).`, "info", "flash");
       }
       return files;
     }
@@ -1158,6 +1161,9 @@
 
       const inferredScope = inferRestoreScope(file);
       if (inferredScope) {
+        if (inferredScope !== document.querySelector("input[name='backup-scope']:checked").value) {
+          logLine(`Restore scope was auto-switched to ${backupTargets[inferredScope].label} based on the uploaded file.`, "info", "restore");
+        }
         setSelectedBackupScope(inferredScope);
       }
 
@@ -1176,7 +1182,7 @@
     restoreButton.addEventListener("click", handleRestore);
 
     logLine("Initializing page…", "wait");
-    updateBackupSummary(false);
+    updateBackupSummary({ shouldLog: false });
     if (!serialSupported) {
       setFlashStatus("Web Serial is not supported in this browser. Flashing is unavailable.", true);
       setBackupStatus("Web Serial is not supported in this browser. Backup is unavailable.", true);
