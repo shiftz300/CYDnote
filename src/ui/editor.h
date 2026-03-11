@@ -378,6 +378,11 @@ public:
         if (!textarea) return;
         applyLargeDocPerfMode(content.length());
         lv_textarea_set_text(textarea, content.c_str());
+        uint32_t len = (uint32_t)content.length();
+        uint32_t cursor_target = anchor_end ? len : 0U;
+        lv_textarea_set_cursor_pos(textarea, (int32_t)cursor_target);
+        ime_cursor_anchor_pos = cursor_target;
+        ime_cursor_anchor_valid = true;
         if (anchor_end) scrollViewToEnd();
         else scrollViewToStart();
         refreshReadChunkButtons();
