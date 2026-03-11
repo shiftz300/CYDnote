@@ -35,20 +35,22 @@ If you want Netlify to deploy directly from this repository, a root-level `netli
 - Netlify can publish the `webflash/` directory directly
 - The page loads firmware binaries from the repository's `latest` release assets
 - No firmware build step is required inside Netlify
-- The page also offers an optional `ghproxy` mirror toggle for faster firmware downloads in mainland China
-- The page keeps a simple log area, shows the firmware asset build date from release asset timestamps, and can back up either the on-device LittleFS partition or the full 4MB flash as a downloadable `.bin` file
+- The page also offers an optional `gh-proxy.org` mirror toggle for faster firmware downloads in mainland China
+- The page now uses a flat in-page flashing flow instead of an extra web flashing popup
+- The page keeps a simple color-highlighted log area, shows the firmware asset build date from release asset timestamps, can back up either the on-device LittleFS partition or the full 4MB flash as a downloadable `.bin` file, and can restore those uploaded backup files back to the matching flash scope
 
 Notes:
 
 - Use Chrome or Edge because the site depends on Web Serial
 - The preserve-data mode is only safe when the partition layout has not changed
-- If GitHub's direct downloads are slow in your region, enable the `ghproxy` mirror toggle in the page
-- `ghproxy` proxies firmware download URLs by default; if direct GitHub API access fails, the page also retries release metadata through `https://github.akams.cn/`
+- If GitHub's direct downloads are slow in your region, enable the `gh-proxy.org` mirror toggle in the page
+- `gh-proxy.org` proxies firmware download URLs; if direct GitHub API access fails, the page also retries release metadata through `https://github.akams.cn/`
 - The page checks the `latest` release assets on load; if `littlefs.bin` is missing it automatically disables the full-restore option
 - If the base firmware assets (`bootloader.bin`, `partitions.bin`, `firmware.bin`) are missing, the page blocks flashing entirely
 - If the browser cannot reach the GitHub API metadata endpoint, the page falls back to preserve-data mode only
 - The page shows the build date from the firmware asset upload/update time because the reusable `latest` release record date may be older than the current binaries
 - Device backup supports either the LittleFS data partition or a full raw 4MB flash dump
+- Uploaded backup restore requires the raw `.bin` file size to match the selected scope exactly
 - The current board configuration is classic `ESP32`, not an `ESP32-S3` OPI PSRAM target
 
 ## Warning

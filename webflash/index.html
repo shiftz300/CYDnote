@@ -4,54 +4,60 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CYDnote Web Flasher</title>
-  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
   <style>
     :root {
       color-scheme: dark;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #111;
-      color: #f9fafb;
-      --cyd-bg: #111111;
-      --cyd-panel: #1e1e1e;
-      --cyd-border: #404040;
+      background: #111827;
+      color: #f8fafc;
+      --cyd-bg: #111827;
+      --cyd-panel: #182231;
+      --cyd-panel-soft: #0f172a;
+      --cyd-panel-strong: #1e293b;
+      --cyd-border: #2f3d52;
       --cyd-primary: #5cb8ff;
-      --cyd-primary-soft: #8ed1ff;
-      --cyd-text-soft: #d1d5db;
+      --cyd-primary-soft: #a7dbff;
+      --cyd-success: #7dd3a5;
+      --cyd-warn: #f7c66a;
       --cyd-error: #ff9ea2;
+      --cyd-text-soft: #cbd5e1;
+      --cyd-text-dim: #94a3b8;
     }
     * {
       box-sizing: border-box;
     }
     body {
       margin: 0;
-      background: linear-gradient(180deg, #111111 0%, #171717 100%);
+      background: var(--cyd-bg);
+      color: #f8fafc;
     }
     main {
-      max-width: 760px;
+      max-width: 880px;
       margin: 0 auto;
-      padding: 32px 20px 48px;
+      padding: 24px 16px 40px;
     }
     .card {
-      background: rgba(30, 30, 30, 0.95);
       border: 1px solid var(--cyd-border);
-      border-radius: 16px;
-      padding: 24px;
-      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
-      backdrop-filter: blur(10px);
+      border-radius: 14px;
+      background: var(--cyd-panel-soft);
+      padding: 20px;
+    }
+    .hero {
+      margin-bottom: 14px;
     }
     h1 {
-      margin: 0 0 12px;
-      font-size: 2rem;
+      margin: 0 0 10px;
+      font-size: 1.85rem;
     }
     h2 {
-      margin: 22px 0 12px;
-      font-size: 1.05rem;
+      margin: 0;
+      font-size: 1rem;
     }
     p,
     li,
     label,
     small {
-      line-height: 1.65;
+      line-height: 1.55;
       color: var(--cyd-text-soft);
     }
     p {
@@ -60,261 +66,430 @@
     code {
       color: var(--cyd-primary-soft);
     }
-    .mode,
-    .backup-mode {
+    .flow {
       display: grid;
-      gap: 12px;
-      margin: 24px 0 0;
+      gap: 14px;
     }
-    .backup-mode {
-      margin-top: 12px;
+    .step {
+      border: 1px solid var(--cyd-border);
+      border-radius: 12px;
+      background: var(--cyd-panel);
+      padding: 16px;
     }
-    .option {
+    .step-head {
       display: flex;
       gap: 12px;
       align-items: flex-start;
-      padding: 14px 16px;
-      border-radius: 12px;
+      margin-bottom: 14px;
+    }
+    .step-index {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      background: rgba(92, 184, 255, 0.16);
+      color: var(--cyd-primary-soft);
+      font-weight: 700;
+      font-size: 0.95rem;
+    }
+    .step-copy {
+      display: grid;
+      gap: 4px;
+    }
+    .segmented,
+    .tool-grid,
+    .meta-grid,
+    .toolbar,
+    .actions {
+      display: grid;
+      gap: 10px;
+    }
+    .segmented {
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .option {
+      display: block;
+      padding: 12px 14px;
+      border-radius: 10px;
       border: 1px solid var(--cyd-border);
-      background: rgba(255, 255, 255, 0.02);
+      background: var(--cyd-panel-soft);
+      cursor: pointer;
+      transition: border-color 0.18s ease, background-color 0.18s ease;
     }
     .option input {
-      margin-top: 4px;
-      accent-color: var(--cyd-primary);
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
     }
     .option strong {
       display: block;
-      margin-bottom: 4px;
+      margin-bottom: 3px;
       color: #fff;
+      font-size: 0.97rem;
     }
     .option:has(input:checked) {
-      border-color: var(--cyd-primary-soft);
-      background: rgba(92, 184, 255, 0.1);
-      box-shadow: inset 0 0 0 1px rgba(142, 209, 255, 0.24);
+      border-color: rgba(92, 184, 255, 0.6);
+      background: rgba(92, 184, 255, 0.12);
     }
     .option.disabled {
-      opacity: 0.58;
+      opacity: 0.56;
+      cursor: not-allowed;
     }
-    .summary,
-    .mirror-panel,
-    .backup-panel,
-    .meta,
-    .log-panel {
-      margin-top: 16px;
-      padding: 14px 16px;
-      border-radius: 12px;
-      border: 1px solid var(--cyd-border);
-      background: rgba(255, 255, 255, 0.02);
+    .toolbar {
+      margin-top: 12px;
     }
-    .summary {
-      background: rgba(92, 184, 255, 0.12);
-      border: 1px solid rgba(142, 209, 255, 0.35);
-      color: #dbeafe;
-    }
-    .mirror-panel label {
+    .toggle {
       display: flex;
       gap: 10px;
       align-items: flex-start;
+      padding: 12px 14px;
+      border: 1px solid var(--cyd-border);
+      border-radius: 10px;
+      background: var(--cyd-panel-soft);
       cursor: pointer;
-      color: #fff;
-      font-weight: 600;
     }
-    .mirror-panel input {
+    .toggle input {
       margin-top: 3px;
       accent-color: var(--cyd-primary);
     }
-    .mirror-panel small {
-      display: block;
-      margin-top: 4px;
-      color: var(--cyd-text-soft);
-      font-weight: 400;
-      line-height: 1.5;
+    .toggle strong {
+      color: #fff;
+      font-size: 0.97rem;
     }
-    .release-note {
-      margin: 12px 0 0;
-      color: var(--cyd-primary-soft);
+    .summary,
+    .release-note,
+    .status-text {
+      min-height: 1.4rem;
       font-size: 0.95rem;
     }
+    .summary {
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: rgba(92, 184, 255, 0.1);
+      border: 1px solid rgba(92, 184, 255, 0.28);
+      color: #dbeafe;
+    }
+    .release-note {
+      color: var(--cyd-primary-soft);
+    }
     .release-note.error,
-    .backup-status.error {
+    .status-text.error {
       color: var(--cyd-error);
     }
-    .meta {
-      display: grid;
-      gap: 8px;
+    .meta-grid {
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     }
-    .meta p {
-      margin: 0;
+    .meta-item {
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--cyd-border);
+      background: var(--cyd-panel-soft);
+    }
+    .meta-item span {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--cyd-text-dim);
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .meta-item strong {
+      color: #fff;
+      font-size: 0.98rem;
+      word-break: break-word;
+    }
+    .tool-grid {
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      margin-top: 12px;
+    }
+    .tool-card {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+      border-radius: 10px;
+      border: 1px solid var(--cyd-border);
+      background: var(--cyd-panel-soft);
+    }
+    .tool-card strong {
+      color: #fff;
+      font-size: 0.97rem;
+    }
+    .file-picker {
+      display: grid;
+      gap: 6px;
+      color: #fff;
+      font-weight: 600;
+    }
+    .file-picker input[type="file"] {
+      width: 100%;
+      color: var(--cyd-text-soft);
     }
     .actions {
-      display: grid;
-      gap: 12px;
-      margin-top: 16px;
+      margin-top: 2px;
     }
     button {
       appearance: none;
+      width: 100%;
       border: 1px solid var(--cyd-primary-soft);
       border-radius: 10px;
-      padding: 14px 22px;
-      font-size: 1rem;
+      padding: 12px 16px;
+      font-size: 0.97rem;
       font-weight: 700;
       color: #fff;
-      background: var(--cyd-panel);
+      background: var(--cyd-panel-strong);
       cursor: pointer;
-      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
-      transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+      transition: background-color 0.18s ease, border-color 0.18s ease;
     }
     button:hover {
       background: rgba(92, 184, 255, 0.14);
       border-color: var(--cyd-primary);
     }
-    button:active {
-      background: var(--cyd-primary);
-      border-color: var(--cyd-primary-soft);
-    }
     button:disabled {
       cursor: not-allowed;
-      color: #c7c7c7;
-      background: #1a1a1a;
-      border-color: #555;
-      box-shadow: none;
-    }
-    esp-web-install-button {
-      display: block;
-    }
-    esp-web-install-button::part(unsupported) {
-      width: 100%;
-    }
-    .hint {
-      margin-top: 12px;
-      font-size: 0.95rem;
-      color: #9ca3af;
-    }
-    .backup-panel strong {
-      color: #fff;
-    }
-    .backup-status {
-      margin-top: 10px;
-      min-height: 1.4rem;
+      color: #94a3b8;
+      background: #111827;
+      border-color: #334155;
     }
     .progress {
       width: 100%;
-      margin-top: 12px;
       height: 10px;
       accent-color: var(--cyd-primary);
     }
     .log-panel {
-      margin-top: 18px;
-    }
-    .log-panel h2 {
-      margin-top: 0;
+      border: 1px solid var(--cyd-border);
+      border-radius: 10px;
+      background: #0b1220;
+      padding: 12px;
     }
     #log-window {
-      margin: 0;
-      min-height: 160px;
-      max-height: 260px;
+      display: grid;
+      gap: 8px;
+      min-height: 180px;
+      max-height: 320px;
       overflow: auto;
-      padding: 14px;
-      border-radius: 10px;
-      border: 1px solid #252525;
-      background: #0f0f0f;
-      color: #d8e6f7;
+      margin: 0;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 0.84rem;
-      line-height: 1.6;
+      line-height: 1.5;
+    }
+    .log-entry {
+      display: grid;
+      grid-template-columns: auto auto 1fr;
+      gap: 8px;
+      align-items: start;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid rgba(51, 65, 85, 0.85);
+    }
+    .log-time {
+      color: #94a3b8;
+      white-space: nowrap;
+    }
+    .log-tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 62px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+    .log-message {
+      color: #dbeafe;
       white-space: pre-wrap;
       word-break: break-word;
+    }
+    .level-info .log-tag {
+      background: rgba(92, 184, 255, 0.16);
+      color: var(--cyd-primary-soft);
+    }
+    .level-success .log-tag {
+      background: rgba(125, 211, 165, 0.14);
+      color: var(--cyd-success);
+    }
+    .level-warn .log-tag {
+      background: rgba(247, 198, 106, 0.16);
+      color: var(--cyd-warn);
+    }
+    .level-error .log-tag {
+      background: rgba(255, 158, 162, 0.16);
+      color: var(--cyd-error);
+    }
+    .level-wait .log-tag {
+      background: rgba(148, 163, 184, 0.16);
+      color: #d1d5db;
+    }
+    .source-backup .log-message {
+      color: #bfdbfe;
+    }
+    .source-restore .log-message {
+      color: #c7f9cc;
+    }
+    .source-release .log-message {
+      color: #c4b5fd;
+    }
+    .notes {
+      margin: 16px 0 0;
+      padding-left: 18px;
+      color: var(--cyd-text-dim);
+    }
+    .hint {
+      margin-top: 12px;
+      font-size: 0.92rem;
+      color: var(--cyd-text-dim);
+    }
+    @media (max-width: 640px) {
+      main {
+        padding: 16px 12px 28px;
+      }
+      .card,
+      .step {
+        padding: 14px;
+      }
+      .log-entry {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
 <body>
   <main>
     <div class="card">
-      <h1>CYDnote Web Flasher</h1>
-      <p>For <code>ESP32-2432S028/ESP32-2432S028R (CYD)</code>. Use Chrome/Edge with Web Serial support and connect your device by USB.</p>
-
-      <div class="mode">
-        <label class="option">
-          <input type="radio" name="flash-mode" value="preserve" checked>
-          <span>
-            <strong>Preserve Data Update</strong>
-            Updates bootloader, partitions, and firmware only. Keeps LittleFS data unchanged.
-          </span>
-        </label>
-        <label class="option">
-          <input type="radio" name="flash-mode" value="erase">
-          <span>
-            <strong>Full Restore</strong>
-            Also writes LittleFS image and overwrites local device data.
-          </span>
-        </label>
+      <div class="hero">
+        <h1>CYDnote Web Flasher</h1>
+        <p>For <code>ESP32-2432S028/ESP32-2432S028R (CYD)</code>. Use Chrome/Edge and connect by USB.</p>
       </div>
 
-      <div class="summary" id="mode-summary">Current mode: Preserve Data Update. LittleFS at <code>0x310000</code> will not be overwritten.</div>
+      <div class="flow">
+        <section class="step">
+          <div class="step-head">
+            <span class="step-index">1</span>
+            <div class="step-copy">
+              <h2>Flash</h2>
+              <p>Pick a mode and start.</p>
+            </div>
+          </div>
 
-      <div class="mirror-panel">
-        <label>
-          <input type="checkbox" id="ghproxy-toggle">
-            <span>
-              Use <code>ghproxy</code> mirror for faster firmware downloads
-              <small>If direct GitHub API access fails, this page will automatically fetch release metadata through <code>github.akams.cn</code>.</small>
-            </span>
-        </label>
+          <div class="segmented mode">
+            <label class="option">
+              <input type="radio" name="flash-mode" value="preserve" checked>
+              <span>
+                <strong>Preserve Data</strong>
+                Updates firmware without overwriting LittleFS.
+              </span>
+            </label>
+            <label class="option">
+              <input type="radio" name="flash-mode" value="erase">
+              <span>
+                <strong>Full Restore</strong>
+                Writes <code>littlefs.bin</code> and clears local data.
+              </span>
+            </label>
+          </div>
+
+          <div class="toolbar">
+            <label class="toggle">
+              <input type="checkbox" id="ghproxy-toggle">
+              <span>
+                <strong>Use <code>gh-proxy.org</code></strong>
+              </span>
+            </label>
+            <div class="summary" id="mode-summary">Current mode: Preserve Data. LittleFS at <code>0x310000</code> will not be overwritten.</div>
+            <p class="release-note" id="release-note">Loading GitHub release assets…</p>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Build Time</span>
+              <strong id="build-date">Checking…</strong>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button id="flash-button" type="button">Connect Device and Flash</button>
+          </div>
+          <progress class="progress" id="flash-progress" value="0" max="100" hidden></progress>
+          <div class="status-text" id="flash-status">Ready to flash.</div>
+        </section>
+
+        <section class="step">
+          <div class="step-head">
+            <span class="step-index">2</span>
+            <div class="step-copy">
+              <h2>Backup / Restore</h2>
+              <p>Pick a scope.</p>
+            </div>
+          </div>
+
+          <div class="segmented backup-mode">
+            <label class="option">
+              <input type="radio" name="backup-scope" value="littlefs" checked>
+              <span>
+                <strong>LittleFS Scope</strong>
+                User data at <code>0x310000</code>.
+              </span>
+            </label>
+            <label class="option">
+              <input type="radio" name="backup-scope" value="full">
+              <span>
+                <strong>Full Flash Scope</strong>
+                Whole 4MB flash.
+              </span>
+            </label>
+          </div>
+
+          <p class="hint" id="backup-summary">Current backup range: LittleFS.</p>
+
+          <div class="tool-grid">
+            <div class="tool-card">
+              <strong>Download Backup</strong>
+              <div class="actions">
+                <button id="backup-button" type="button">Download Backup</button>
+              </div>
+              <progress class="progress" id="backup-progress" value="0" max="100" hidden></progress>
+              <div class="status-text" id="backup-status">Ready to back up.</div>
+            </div>
+
+            <div class="tool-card">
+              <strong>Upload and Restore Backup</strong>
+              <label class="file-picker">
+                <span>Backup file</span>
+                <input id="restore-file" type="file" accept=".bin,application/octet-stream">
+              </label>
+              <div class="actions">
+                <button id="restore-button" type="button">Upload and Restore</button>
+              </div>
+              <progress class="progress" id="restore-progress" value="0" max="100" hidden></progress>
+              <div class="status-text" id="restore-status">Choose a backup file to restore.</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="step">
+          <div class="step-head">
+            <span class="step-index">3</span>
+            <div class="step-copy">
+              <h2>Log</h2>
+            </div>
+          </div>
+
+          <div class="log-panel">
+            <div id="log-window" role="log" aria-live="polite"></div>
+          </div>
+        </section>
       </div>
 
-      <p class="release-note" id="release-note">Loading GitHub release assets…</p>
-
-      <div class="meta">
-        <p>Firmware build time: <strong id="build-date">Checking…</strong></p>
-        <p>Release publish time: <strong id="release-date">Checking…</strong></p>
-        <p>Release tag: <strong id="release-tag">latest</strong></p>
-      </div>
-
-      <div class="actions">
-        <esp-web-install-button id="installer" manifest="./manifest-preserve.json">
-          <button slot="activate" id="flash-button">Connect Device and Flash</button>
-        </esp-web-install-button>
-      </div>
-
-      <div class="backup-panel">
-        <strong>Device Backup</strong>
-        <div class="backup-mode">
-          <label class="option">
-            <input type="radio" name="backup-scope" value="littlefs" checked>
-            <span>
-              <strong>LittleFS Backup</strong>
-              Reads the LittleFS partition from <code>0x310000</code> and backs up user data only.
-            </span>
-          </label>
-          <label class="option">
-            <input type="radio" name="backup-scope" value="full">
-            <span>
-              <strong>Full Flash Backup</strong>
-              Reads the full 4MB flash from <code>0x000000</code> (bootloader, app, and data).
-            </span>
-          </label>
-        </div>
-        <p class="hint" id="backup-summary">Current backup range: LittleFS.</p>
-        <div class="actions">
-          <button id="backup-button" type="button">Start Backup</button>
-        </div>
-        <progress class="progress" id="backup-progress" value="0" max="100" hidden></progress>
-        <div class="backup-status" id="backup-status">Ready to back up.</div>
-      </div>
-
-      <div class="log-panel">
-        <h2>Status Log</h2>
-        <pre id="log-window" aria-live="polite">[WAIT] Initializing page…</pre>
-      </div>
-
-      <ul>
+      <ul class="notes">
         <li>If auto-download mode fails, hold <code>BOOT</code>, press <code>RESET</code>, then retry.</li>
-        <li>Use Preserve Data Update only when the partition layout has not changed.</li>
-        <li>The page reads firmware assets from the <code>latest</code> GitHub release.</li>
-        <li>Build time is based on firmware asset upload/update time, not only release publish time.</li>
-        <li>Backup files are downloaded as raw <code>.bin</code> images.</li>
+        <li>Use Preserve Data only when the partition layout has not changed.</li>
+        <li>Backup files must match the selected scope.</li>
       </ul>
-      <p class="hint">Powered by ESP Web Tools. Manifests are preconfigured for this repository's partition layout and GitHub release assets.</p>
     </div>
   </main>
 
@@ -324,7 +499,7 @@
       erase: "./manifest-full.json",
     };
     const githubDownloadPrefix = "https://github.com/";
-    const ghproxyPrefix = "https://ghproxy.com/";
+    const firmwareProxyPrefix = "https://gh-proxy.org/";
     const akamsProxyPrefix = "https://github.akams.cn/";
     const releaseApi = "https://api.github.com/repos/shiftz300/CYDnote/releases/tags/latest";
     const releaseApiCandidates = [
@@ -350,18 +525,21 @@
       },
     };
     const summaryText = {
-      preserve: "Current mode: Preserve Data Update. LittleFS at 0x310000 will not be overwritten.",
-      erase: "Current mode: Full Restore. LittleFS at 0x310000 will be overwritten.",
+      preserve: "Mode: Preserve Data. LittleFS stays unchanged.",
+      erase: "Mode: Full Restore. LittleFS will be overwritten.",
     };
+    const MAX_LOG_ENTRIES = 200;
+    const allowedLogSources = new Set(["system", "flash", "backup", "restore", "release"]);
 
-    const installer = document.getElementById("installer");
     const flashButton = document.getElementById("flash-button");
     const backupButton = document.getElementById("backup-button");
+    const restoreButton = document.getElementById("restore-button");
+    const restoreFileInput = document.getElementById("restore-file");
     const summary = document.getElementById("mode-summary");
+    const flashProgress = document.getElementById("flash-progress");
+    const flashStatus = document.getElementById("flash-status");
     const releaseNote = document.getElementById("release-note");
     const buildDate = document.getElementById("build-date");
-    const releaseDate = document.getElementById("release-date");
-    const releaseTag = document.getElementById("release-tag");
     const ghproxyToggle = document.getElementById("ghproxy-toggle");
     const eraseRadio = document.querySelector("input[value='erase']");
     const eraseOption = eraseRadio.closest(".option");
@@ -370,12 +548,16 @@
     const backupSummary = document.getElementById("backup-summary");
     const backupProgress = document.getElementById("backup-progress");
     const backupStatus = document.getElementById("backup-status");
+    const restoreProgress = document.getElementById("restore-progress");
+    const restoreStatus = document.getElementById("restore-status");
     const logWindow = document.getElementById("log-window");
 
     const serialSupported = typeof navigator !== "undefined" && "serial" in navigator;
-    let currentManifestUrl = null;
+    let currentManifest = null;
     let releaseNoteBase = "Loading GitHub release assets…";
+    let flashInProgress = false;
     let backupInProgress = false;
+    let restoreInProgress = false;
     let flashAvailable = false;
     let esptoolModulePromise = null;
     const pageLocale = document.documentElement.lang || navigator.language || undefined;
@@ -416,14 +598,44 @@
       return fallback;
     }
 
-    function logLine(message, level = "info") {
-      const stamp = new Date().toLocaleTimeString(pageLocale, { hour12: false });
-      const next = `[${stamp}] [${level}] ${message}`;
-      logWindow.textContent = `${logWindow.textContent.trimEnd()}\n${next}`.trim();
+    function logLine(message, level = "info", source = "system") {
+      const normalizedLevel = ["info", "success", "warn", "error", "wait"].includes(level) ? level : "info";
+      const requestedSource = String(source || "system").toLowerCase().replace(/[^a-z0-9_-]/g, "") || "system";
+      const normalizedSource = allowedLogSources.has(requestedSource) ? requestedSource : "system";
+      const entry = document.createElement("div");
+      entry.className = `log-entry level-${normalizedLevel} source-${normalizedSource}`;
+
+      const time = document.createElement("span");
+      time.className = "log-time";
+      time.textContent = new Date().toLocaleTimeString(pageLocale, { hour12: false });
+
+      const tag = document.createElement("span");
+      tag.className = "log-tag";
+      tag.textContent = `${normalizedLevel}/${normalizedSource}`;
+
+      const body = document.createElement("span");
+      body.className = "log-message";
+      body.textContent = message;
+
+      entry.append(time, tag, body);
+      logWindow.append(entry);
+
+      while (logWindow.childElementCount > MAX_LOG_ENTRIES) {
+        logWindow.firstElementChild?.remove();
+      }
+
       logWindow.scrollTop = logWindow.scrollHeight;
     }
 
-    function createLoaderTerminal(prefix) {
+    function detectLoaderLevel(message) {
+      const normalized = message.toLowerCase();
+      if (normalized.includes("error")) return "error";
+      if (normalized.includes("warning")) return "warn";
+      if (normalized.includes("completed successfully") || normalized.includes("verified")) return "success";
+      return "info";
+    }
+
+    function createLoaderTerminal(source) {
       let buffer = "";
       return {
         clean() {},
@@ -431,7 +643,9 @@
           buffer += String(data).replace(/\r/g, "");
           const lines = buffer.split("\n");
           buffer = lines.pop() || "";
-          lines.filter(Boolean).forEach((line) => logLine(`${prefix}: ${line}`));
+          lines.map((line) => line.trim()).filter(Boolean).forEach((line) => {
+            logLine(line, detectLoaderLevel(line), source);
+          });
         },
         writeLine(data) {
           this.write(`${data}\n`);
@@ -439,37 +653,46 @@
       };
     }
 
+    function anyTransferInProgress() {
+      return flashInProgress || backupInProgress || restoreInProgress;
+    }
+
+    function setFlashStatus(text, isError = false, levelOverride = null) {
+      flashStatus.textContent = text;
+      flashStatus.classList.toggle("error", isError);
+      logLine(text, levelOverride || (isError ? "error" : "info"), "flash");
+    }
+
     function setBackupStatus(text, isError = false) {
       backupStatus.textContent = text;
       backupStatus.classList.toggle("error", isError);
-      logLine(text, isError ? "error" : "info");
+      logLine(text, isError ? "error" : "info", "backup");
+    }
+
+    function setRestoreStatus(text, isError = false, levelOverride = null) {
+      restoreStatus.textContent = text;
+      restoreStatus.classList.toggle("error", isError);
+      logLine(text, levelOverride || (isError ? "error" : "info"), "restore");
     }
 
     function updateReleaseNote(text, isError = false) {
       releaseNoteBase = text;
-      const mirrorSuffix = " Firmware downloads will use the ghproxy mirror.";
-      releaseNote.textContent = ghproxyToggle.checked
-        ? `${text}${text.endsWith(".") ? "" : "."}${mirrorSuffix}`
-        : text;
+      releaseNote.textContent = text;
       releaseNote.classList.toggle("error", isError);
-      logLine(releaseNote.textContent, isError ? "error" : "info");
+      logLine(releaseNote.textContent, isError ? "error" : "info", "release");
     }
 
     function setFlashButtonEnabled(enabled) {
       flashButton.disabled = !enabled;
-      installer.style.pointerEvents = enabled ? "" : "none";
-      installer.style.opacity = enabled ? "1" : "0.75";
+      flashButton.style.opacity = enabled ? "1" : "0.72";
     }
 
     function syncActionButtons() {
-      setFlashButtonEnabled(flashAvailable && !backupInProgress);
-      backupButton.disabled = !serialSupported || backupInProgress;
-    }
-
-    function revokeManifestUrl() {
-      if (!currentManifestUrl) return;
-      URL.revokeObjectURL(currentManifestUrl);
-      currentManifestUrl = null;
+      const busy = anyTransferInProgress();
+      setFlashButtonEnabled(serialSupported && flashAvailable && !!currentManifest && !busy);
+      backupButton.disabled = !serialSupported || busy;
+      restoreButton.disabled = !serialSupported || busy || !restoreFileInput.files?.length;
+      restoreFileInput.disabled = busy;
     }
 
     function getSelectedMode() {
@@ -480,11 +703,22 @@
       return backupTargets[document.querySelector("input[name='backup-scope']:checked").value];
     }
 
-    function updateBackupSummary() {
+    function setSelectedBackupScope(scope, shouldLog = false) {
+      const radio = document.querySelector(`input[name="backup-scope"][value="${scope}"]`);
+      if (!radio || radio.checked) return;
+      radio.checked = true;
+      updateBackupSummary({ shouldLog });
+    }
+
+    function updateBackupSummary({ shouldLog = true } = {}) {
       const target = getSelectedBackupTarget();
-      backupSummary.textContent = `Current backup range: ${target.label} (start ${toHex(target.offset)}, size ${formatSize(target.size)}).`;
-      backupButton.textContent = document.querySelector("input[name='backup-scope']:checked").value === "full" ? "Start Full Backup" : "Start Backup";
-      logLine(`Backup range changed to ${target.label}.`);
+      const scope = document.querySelector("input[name='backup-scope']:checked").value;
+      backupSummary.textContent = `${target.label}: ${toHex(target.offset)} · ${formatSize(target.size)}`;
+      backupButton.textContent = scope === "full" ? "Download Full Backup" : "Download Backup";
+      restoreButton.textContent = scope === "full" ? "Restore Full Backup" : "Upload and Restore";
+      if (shouldLog) {
+        logLine(`Scope changed to ${target.label}.`, "info", "backup");
+      }
     }
 
     async function updateMode(mode) {
@@ -499,16 +733,14 @@
           parts: (build.parts || []).map((part) => ({
             ...part,
             path: typeof part.path === "string" && part.path.startsWith(githubDownloadPrefix)
-              ? `${ghproxyPrefix}${part.path}`
+              ? `${firmwareProxyPrefix}${part.path}`
               : part.path,
           })),
         }));
       }
-      revokeManifestUrl();
-      currentManifestUrl = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: "application/json" }));
-      installer.setAttribute("manifest", currentManifestUrl);
+      currentManifest = manifest;
       summary.textContent = summaryText[mode];
-      logLine(`Flash mode switched to ${mode === "preserve" ? "Preserve Data Update" : "Full Restore"}.`);
+      logLine(`Flash mode switched to ${mode === "preserve" ? "Preserve Data" : "Full Restore"}.`, "info", "flash");
     }
 
     function markEraseUnavailable() {
@@ -518,12 +750,12 @@
         const preserveRadio = document.querySelector("input[value='preserve']");
         preserveRadio.checked = true;
         updateMode("preserve").catch((error) => {
-          updateReleaseNote(formatErrorMessage(error, "Failed to switch back to Preserve Data Update"), true);
+          updateReleaseNote(formatErrorMessage(error, "Failed to switch back to Preserve Data"), true);
           flashAvailable = false;
           syncActionButtons();
         });
       }
-      logLine("Full Restore mode was disabled because littlefs.bin is missing.", "warn");
+      logLine("Full Restore mode was disabled because littlefs.bin is missing.", "warn", "release");
     }
 
     function updateBuildMetadata(release) {
@@ -540,8 +772,6 @@
         : null;
 
       buildDate.textContent = newestAssetDate ? formatTimestamp(newestAssetDate.toISOString()) : "Unknown";
-      releaseDate.textContent = formatTimestamp(release.published_at || release.created_at);
-      releaseTag.textContent = release.tag_name || "latest";
     }
 
     async function fetchReleaseInfoWithFallback() {
@@ -552,13 +782,10 @@
             headers: { Accept: "application/vnd.github+json" },
           });
           if (!response.ok) throw new Error(`${source.label} ${response.status}`);
-          return {
-            release: await response.json(),
-            sourceLabel: source.label,
-          };
+          return await response.json();
         } catch (error) {
           lastError = error;
-          logLine(`Failed to load release metadata (${source.label}): ${error.message}`, "warn");
+          logLine("Release check failed, retrying…", "warn", "release");
         }
       }
       throw lastError || new Error("Failed to load release metadata");
@@ -566,7 +793,7 @@
 
     async function loadReleaseInfo() {
       try {
-        const { release, sourceLabel } = await fetchReleaseInfoWithFallback();
+        const release = await fetchReleaseInfoWithFallback();
         const assetNames = new Set((release.assets || []).map((asset) => asset.name));
         const preserveReady = requiredByMode.preserve.every((name) => assetNames.has(name));
         const eraseReady = requiredByMode.erase.every((name) => assetNames.has(name));
@@ -587,21 +814,19 @@
         const buildStamp = newestAsset ? formatTimestamp(newestAsset.updated_at || newestAsset.created_at) : "Unknown";
 
         flashAvailable = true;
-        const sourceSuffix = sourceLabel === "GitHub API" ? "" : ` (metadata source: ${sourceLabel})`;
         if (eraseReady) {
-          releaseNoteBase = `Loaded release: ${release.name || "Latest Build"}. Firmware build time: ${buildStamp}.${sourceSuffix}`;
+          releaseNoteBase = `Ready. Build time: ${buildStamp}.`;
           updateReleaseNote(releaseNoteBase);
         } else {
-          releaseNoteBase = `Loaded release: ${release.name || "Latest Build"}, but littlefs.bin is missing. Only Preserve Data Update is available.${sourceSuffix}`;
+          releaseNoteBase = "Ready. Preserve Data only.";
           updateReleaseNote(releaseNoteBase, true);
           markEraseUnavailable();
         }
         syncActionButtons();
       } catch (error) {
         buildDate.textContent = "Unknown";
-        releaseDate.textContent = "Unknown";
         flashAvailable = true;
-        updateReleaseNote(`Failed to load release metadata: ${error.message}. Basic flashing capability is kept.`, true);
+        updateReleaseNote("Release check failed. Flashing is still available.", true);
         markEraseUnavailable();
         syncActionButtons();
       }
@@ -621,6 +846,22 @@
       backupStatus.textContent = `Reading ${target.label}... ${percent}% (${Math.round(doneBytes / 1024)} KB / ${Math.round(totalBytes / 1024)} KB)`;
     }
 
+    function updateFlashProgress(files, fileIndex, writtenBytes, totalBytes) {
+      const percentPerFile = 100 / files.length;
+      const percent = Math.min(100, Math.round((fileIndex * percentPerFile) + ((writtenBytes / totalBytes) * percentPerFile)));
+      const fileName = files[fileIndex]?.name || `part ${fileIndex + 1}`;
+      flashProgress.hidden = false;
+      flashProgress.value = percent;
+      flashStatus.textContent = `Writing ${fileName}... ${percent}% (${Math.round(writtenBytes / 1024)} KB / ${Math.round(totalBytes / 1024)} KB transferred)`;
+    }
+
+    function updateRestoreProgress(target, writtenBytes, totalBytes) {
+      const percent = Math.min(100, Math.round((writtenBytes / totalBytes) * 100));
+      restoreProgress.hidden = false;
+      restoreProgress.value = percent;
+      restoreStatus.textContent = `Writing ${target.label}... ${percent}% (${Math.round(writtenBytes / 1024)} KB / ${Math.round(totalBytes / 1024)} KB transferred)`;
+    }
+
     function downloadBackup(data, target) {
       const filenameDate = new Date().toISOString().replace(/[:.]/g, "-").replace("T", "-").replace("Z", "");
       const fileName = `${target.prefix}-${filenameDate}.bin`;
@@ -636,8 +877,105 @@
       return fileName;
     }
 
+    function inferRestoreScope(file) {
+      if (!file) return null;
+      const name = file.name.toLowerCase();
+      if (name.includes(backupTargets.full.prefix)) return "full";
+      if (name.includes(backupTargets.littlefs.prefix)) return "littlefs";
+      return Object.entries(backupTargets).find(([, target]) => target.size === file.size)?.[0] || null;
+    }
+
+    function validateRestoreFile(file, target) {
+      if (!file) {
+        return "Choose a backup file before starting restore.";
+      }
+      if (file.size !== target.size) {
+        return `Selected file size ${formatSize(file.size)} (${file.size} bytes) does not match ${target.label} size ${formatSize(target.size)} (${target.size} bytes).`;
+      }
+      return "";
+    }
+
+    async function readFileAsUint8Array(file) {
+      return new Uint8Array(await file.arrayBuffer());
+    }
+
+    async function downloadFlashFiles() {
+      const build = currentManifest?.builds?.[0];
+      const parts = build?.parts || [];
+      if (!parts.length) {
+        throw new Error("Manifest does not contain flash parts");
+      }
+
+      const files = [];
+      for (let index = 0; index < parts.length; index += 1) {
+        const part = parts[index];
+        const partFileName = typeof part.path === "string" ? part.path.split("/").pop() || `part-${index + 1}.bin` : `part-${index + 1}.bin`;
+        setFlashStatus(`Downloading ${partFileName} (${index + 1}/${parts.length})...`, false, "wait");
+        const response = await fetch(part.path);
+        if (!response.ok) {
+          throw new Error(`Cannot download ${partFileName}: ${response.status} ${response.statusText}`);
+        }
+        const data = new Uint8Array(await response.arrayBuffer());
+        files.push({ name: partFileName, data, address: part.offset });
+        logLine(`Downloaded ${partFileName} (${formatSize(data.length)}).`, "info", "flash");
+      }
+      return files;
+    }
+
+    async function handleFlash() {
+      if (!serialSupported || anyTransferInProgress() || !flashAvailable || !currentManifest) return;
+
+      flashInProgress = true;
+      flashProgress.hidden = false;
+      flashProgress.value = 0;
+      syncActionButtons();
+      setFlashStatus(`Preparing ${getSelectedMode() === "preserve" ? "Preserve Data" : "Full Restore"} flashing...`, false, "wait");
+
+      let transport = null;
+      try {
+        const files = await downloadFlashFiles();
+        const { ESPLoader, Transport } = await ensureEsptoolModule();
+        const port = await navigator.serial.requestPort({});
+        transport = new Transport(port, true);
+        const loader = new ESPLoader({
+          transport,
+          baudrate: 115200,
+          terminal: createLoaderTerminal("flash"),
+        });
+
+        const chip = await loader.main();
+        logLine(`Connected device: ${chip}.`, "success", "flash");
+        await loader.writeFlash({
+          fileArray: files.map(({ data, address }) => ({ data, address })),
+          flashMode: "keep",
+          flashFreq: "keep",
+          flashSize: "keep",
+          eraseAll: false,
+          compress: true,
+          reportProgress: (fileIndex, writtenBytes, totalBytes) => {
+            updateFlashProgress(files, fileIndex, writtenBytes, totalBytes);
+          },
+        });
+        await loader.after("hard_reset");
+        flashProgress.value = 100;
+        setFlashStatus(`Flash complete: ${getSelectedMode() === "preserve" ? "Preserve Data" : "Full Restore"}.`, false, "success");
+      } catch (error) {
+        setFlashStatus(formatErrorMessage(error, "Flashing failed"), true);
+      } finally {
+        if (transport) {
+          try {
+            await transport.disconnect();
+          } catch (disconnectError) {
+            logLine(formatErrorMessage(disconnectError, "Warning while disconnecting flash session"), "warn", "flash");
+          }
+        }
+        flashInProgress = false;
+        syncActionButtons();
+      }
+    }
+
     async function handleBackup() {
-      if (!serialSupported || backupInProgress) return;
+      if (!serialSupported || anyTransferInProgress()) return;
 
       const target = getSelectedBackupTarget();
       backupInProgress = true;
@@ -658,7 +996,7 @@
         });
 
         const chip = await loader.main();
-        logLine(`Connected device: ${chip}.`);
+        logLine(`Connected device: ${chip}.`, "success", "backup");
         const data = await loader.readFlash(target.offset, target.size, (_packet, doneBytes, totalBytes) => {
           updateBackupProgress(target, doneBytes, totalBytes);
         });
@@ -672,10 +1010,71 @@
           try {
             await transport.disconnect();
           } catch (disconnectError) {
-            logLine(formatErrorMessage(disconnectError, "Warning while disconnecting backup session"), "warn");
+            logLine(formatErrorMessage(disconnectError, "Warning while disconnecting backup session"), "warn", "backup");
           }
         }
         backupInProgress = false;
+        syncActionButtons();
+      }
+    }
+
+    async function handleRestore() {
+      if (!serialSupported || anyTransferInProgress()) return;
+
+      const file = restoreFileInput.files?.[0];
+      const target = getSelectedBackupTarget();
+      const validationError = validateRestoreFile(file, target);
+      if (validationError) {
+        setRestoreStatus(validationError, true);
+        syncActionButtons();
+        return;
+      }
+
+      restoreInProgress = true;
+      restoreProgress.hidden = false;
+      restoreProgress.value = 0;
+      syncActionButtons();
+      setRestoreStatus(`Starting restore: ${file.name} -> ${target.label} (${toHex(target.offset)})...`, false, "wait");
+
+      let transport = null;
+      try {
+        const data = await readFileAsUint8Array(file);
+        const { ESPLoader, Transport } = await ensureEsptoolModule();
+        const port = await navigator.serial.requestPort({});
+        transport = new Transport(port, true);
+        const loader = new ESPLoader({
+          transport,
+          baudrate: 115200,
+          terminal: createLoaderTerminal("restore"),
+        });
+
+        const chip = await loader.main();
+        logLine(`Connected device: ${chip}.`, "success", "restore");
+        await loader.writeFlash({
+          fileArray: [{ data, address: target.offset }],
+          flashMode: "keep",
+          flashFreq: "keep",
+          flashSize: "keep",
+          eraseAll: false,
+          compress: true,
+          reportProgress: (_fileIndex, writtenBytes, totalBytes) => {
+            updateRestoreProgress(target, writtenBytes, totalBytes);
+          },
+        });
+        await loader.after("hard_reset");
+        restoreProgress.value = 100;
+        setRestoreStatus(`Restore complete: ${file.name}`, false, "success");
+      } catch (error) {
+        setRestoreStatus(formatErrorMessage(error, `${target.label} restore failed`), true);
+      } finally {
+        if (transport) {
+          try {
+            await transport.disconnect();
+          } catch (disconnectError) {
+            logLine(formatErrorMessage(disconnectError, "Warning while disconnecting restore session"), "warn", "restore");
+          }
+        }
+        restoreInProgress = false;
         syncActionButtons();
       }
     }
@@ -709,23 +1108,47 @@
         updateReleaseNote(releaseNoteBase, releaseNote.classList.contains("error"));
       } catch (error) {
         flashAvailable = false;
-        updateReleaseNote(formatErrorMessage(error, "Failed to switch ghproxy"), true);
+        updateReleaseNote(formatErrorMessage(error, "Failed to switch gh-proxy.org"), true);
         syncActionButtons();
       }
     });
 
-    flashButton.addEventListener("click", () => {
-      logLine(`Flashing flow opened: ${getSelectedMode() === "preserve" ? "Preserve Data Update" : "Full Restore"}.`);
+    restoreFileInput.addEventListener("change", () => {
+      const file = restoreFileInput.files?.[0];
+      if (!file) {
+        setRestoreStatus("Choose a backup file to restore.");
+        syncActionButtons();
+        return;
+      }
+
+      const inferredScope = inferRestoreScope(file);
+      if (inferredScope) {
+        if (inferredScope !== document.querySelector("input[name='backup-scope']:checked").value) {
+          logLine(`Restore scope was auto-switched to ${backupTargets[inferredScope].label} based on the uploaded file.`, "info", "restore");
+        }
+        setSelectedBackupScope(inferredScope);
+      }
+
+      const target = getSelectedBackupTarget();
+      const validationError = validateRestoreFile(file, target);
+      if (validationError) {
+        setRestoreStatus(validationError, true);
+      } else {
+        setRestoreStatus(`Selected ${file.name} for ${target.label} restore.`, false, "info");
+      }
+      syncActionButtons();
     });
+
+    flashButton.addEventListener("click", handleFlash);
     backupButton.addEventListener("click", handleBackup);
+    restoreButton.addEventListener("click", handleRestore);
 
-    window.addEventListener("beforeunload", () => {
-      revokeManifestUrl();
-    });
-
-    updateBackupSummary();
+    logLine("Initializing page…", "wait");
+    updateBackupSummary({ shouldLog: false });
     if (!serialSupported) {
+      setFlashStatus("Web Serial is not supported in this browser. Flashing is unavailable.", true);
       setBackupStatus("Web Serial is not supported in this browser. Backup is unavailable.", true);
+      setRestoreStatus("Web Serial is not supported in this browser. Restore is unavailable.", true);
     }
     syncActionButtons();
     updateReleaseNote(releaseNoteBase);
