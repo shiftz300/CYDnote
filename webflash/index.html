@@ -403,7 +403,7 @@
     <div class="card">
       <div class="hero">
         <h1>CYDnote Web Flasher</h1>
-        <p>Installer-style flow for <code>ESP32-2432S028/ESP32-2432S028R (CYD)</code>. Use Chrome/Edge and connect by USB.</p>
+        <p>Installation flow for <code>ESP32-2432S028/ESP32-2432S028R (CYD)</code>. Use Chrome/Edge and connect by USB.</p>
       </div>
 
       <div class="flow">
@@ -551,18 +551,19 @@
       erase: "./manifest-full.json",
     };
     const githubDownloadPrefix = "https://github.com/";
-    const firmwareProxyPrefixes = [
-      "https://gh-proxy.org/",
-      "https://edgeone.gh-proxy.org/",
-      "https://cdn.gh-proxy.org/",
-      "https://hk.gh-proxy.org/",
+    const firmwareProxyMirrors = [
+      { prefix: "https://gh-proxy.org/", label: "gh-proxy.org", status: "ghproxy" },
+      { prefix: "https://edgeone.gh-proxy.org/", label: "edgeone.gh-proxy.org", status: "edgeone" },
+      { prefix: "https://cdn.gh-proxy.org/", label: "cdn.gh-proxy.org", status: "cdn" },
+      { prefix: "https://hk.gh-proxy.org/", label: "hk.gh-proxy.org", status: "hk" },
     ];
-    const firmwareProxyPrefix = firmwareProxyPrefixes[0];
+    const firmwareProxyPrefixes = firmwareProxyMirrors.map((mirror) => mirror.prefix);
+    const firmwareProxyPrefix = firmwareProxyMirrors[0].prefix;
     const akamsProxyPrefix = "https://github.akams.cn/";
     const releaseApi = "https://api.github.com/repos/shiftz300/CYDnote/releases/tags/latest";
     const releaseApiCandidates = [
       { url: releaseApi, label: "GitHub API" },
-      ...firmwareProxyPrefixes.map((prefix) => ({ url: `${prefix}${releaseApi}`, label: `${new URL(prefix).host} API mirror` })),
+      ...firmwareProxyMirrors.map((mirror) => ({ url: `${mirror.prefix}${releaseApi}`, label: `${mirror.label} API mirror` })),
       { url: `${akamsProxyPrefix}${releaseApi}`, label: "github.akams.cn API mirror" },
     ];
     const requiredByMode = {
@@ -600,6 +601,7 @@
       akams: "github.akams.cn",
       local: "Local Upload",
     };
+    const proxyStatusByPrefix = new Map(firmwareProxyMirrors.map((mirror) => [mirror.prefix, assetRouteStatus[mirror.status]]));
 
     const flashButton = document.getElementById("flash-button");
     const backupButton = document.getElementById("backup-button");
@@ -672,7 +674,7 @@
       return fallback;
     }
 
-    function getPartFileName(path, fallbackName) {
+    function extractFileNameFromPath(path, fallbackName) {
       if (typeof path !== "string") return fallbackName;
       const sanitizedPath = path.split("#")[0].split("?")[0];
       return sanitizedPath.split("/").pop() || fallbackName;
@@ -689,10 +691,11 @@
     function resolveAssetRouteStatus(url) {
       if (typeof url !== "string") return assetRouteStatus.direct;
       if (url.startsWith(`${akamsProxyPrefix}${githubDownloadPrefix}`)) return assetRouteStatus.akams;
-      if (url.startsWith(`${firmwareProxyPrefixes[0]}${githubDownloadPrefix}`)) return assetRouteStatus.ghproxy;
-      if (url.startsWith(`${firmwareProxyPrefixes[1]}${githubDownloadPrefix}`)) return assetRouteStatus.edgeone;
-      if (url.startsWith(`${firmwareProxyPrefixes[2]}${githubDownloadPrefix}`)) return assetRouteStatus.cdn;
-      if (url.startsWith(`${firmwareProxyPrefixes[3]}${githubDownloadPrefix}`)) return assetRouteStatus.hk;
+      for (const [prefix, status] of proxyStatusByPrefix.entries()) {
+        if (url.startsWith(`${prefix}${githubDownloadPrefix}`)) {
+          return status;
+        }
+      }
       return assetRouteStatus.direct;
     }
 
@@ -831,15 +834,16 @@
     function updateLocalReleaseSummary() {
       const files = Array.from(localReleaseInput.files || []);
       localReleaseFiles = new Map(files.map((file) => [file.name.toLowerCase(), file]));
-      const supportedNames = Array.from(new Set(Object.values(requiredByMode).flat()));
+      const modeRequiredNames = requiredByMode[getSelectedMode()];
+      const allSupportedNames = Array.from(new Set(Object.values(requiredByMode).flat()));
       if (!files.length) {
         localReleaseStatus.textContent = "Using online release files by default.";
         return;
       }
-      const recognized = supportedNames.filter((name) => localReleaseFiles.has(name));
+      const recognized = allSupportedNames.filter((name) => localReleaseFiles.has(name));
       localReleaseStatus.textContent = recognized.length
         ? `Local release files loaded: ${recognized.join(", ")}.`
-        : `No recognized release file names found. Expected: ${supportedNames.join(", ")}.`;
+        : `No recognized release file names found. Required for ${getSelectedMode() === "erase" ? "Full Restore" : "Preserve Data"}: ${modeRequiredNames.join(", ")}.`;
     }
 
     async function updateMode(mode) {
@@ -861,6 +865,9 @@
       }
       currentManifest = manifest;
       summary.textContent = summaryText[mode];
+      if (localReleaseFiles.size) {
+        updateLocalReleaseSummary();
+      }
       if (!localReleaseFiles.size) {
         setAssetProxyStatus(ghproxyToggle.checked ? assetRouteStatus.proxyPreferred : assetRouteStatus.directPreferred);
       }
@@ -1029,10 +1036,12 @@
 
     function getFlashDownloadCandidates(url) {
       const candidates = [];
+      const candidateSet = new Set();
       if (typeof url !== "string" || !url.trim()) return candidates;
 
       const pushCandidate = (value) => {
-        if (typeof value === "string" && value.trim() && !candidates.includes(value)) {
+        if (typeof value === "string" && value.trim() && !candidateSet.has(value)) {
+          candidateSet.add(value);
           candidates.push(value);
         }
       };
@@ -1042,7 +1051,7 @@
         firmwareProxyPrefixes.forEach((prefix) => pushCandidate(`${prefix}${url}`));
         pushCandidate(`${akamsProxyPrefix}${url}`);
       } else if (firmwareProxyPrefixes.some((prefix) => url.startsWith(`${prefix}${githubDownloadPrefix}`))) {
-        const matchedPrefix = firmwareProxyPrefixes.find((prefix) => url.startsWith(`${prefix}${githubDownloadPrefix}`)) || firmwareProxyPrefix;
+        const matchedPrefix = firmwareProxyPrefixes.find((prefix) => url.startsWith(`${prefix}${githubDownloadPrefix}`));
         const directUrl = url.slice(matchedPrefix.length);
         pushCandidate(directUrl);
         firmwareProxyPrefixes.forEach((prefix) => {
@@ -1074,7 +1083,7 @@
           }
           setAssetProxyStatus(resolveAssetRouteStatus(candidate));
           if (candidate !== partPath) {
-            logLine(`Downloaded ${partFileName} via ${attemptLabel}.`, "warn", "flash");
+            logLine(`Downloaded ${partFileName} via ${attemptLabel}.`, "info", "flash");
           }
           return new Uint8Array(await response.arrayBuffer());
         } catch (error) {
@@ -1086,7 +1095,7 @@
       }
 
       const manualLink = candidates.find((candidate) => candidate.startsWith(githubDownloadPrefix)) || partPath;
-      throw new Error(`Failed to download ${partFileName}. Manual download link: ${manualLink}. Upload it in "Optional local release files". ${formatErrorMessage(lastError, "Download error")}`);
+      throw new Error(`Failed to download ${partFileName}. Manual download link: ${manualLink}. Upload the file with the local release file picker above. ${formatErrorMessage(lastError, "Download error details")}`);
     }
 
     async function downloadFlashFiles() {
@@ -1099,7 +1108,7 @@
       const files = [];
       for (let index = 0; index < parts.length; index += 1) {
         const part = parts[index];
-        const partFileName = getPartFileName(part.path, `part-${index + 1}.bin`);
+        const partFileName = extractFileNameFromPath(part.path, `part-${index + 1}.bin`);
         const localFile = localReleaseFiles.get(partFileName.toLowerCase());
         let data;
         if (localFile) {
