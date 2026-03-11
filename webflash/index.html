@@ -69,12 +69,32 @@
     .flow {
       display: grid;
       gap: 14px;
+      position: relative;
+      padding-left: 18px;
+    }
+    .flow::before {
+      content: "";
+      position: absolute;
+      left: 6px;
+      top: 6px;
+      bottom: 6px;
+      width: 1px;
+      background: linear-gradient(to bottom, rgba(92, 184, 255, 0.35), rgba(92, 184, 255, 0.1));
     }
     .step {
       border: 1px solid var(--cyd-border);
       border-radius: 12px;
       background: var(--cyd-panel);
       padding: 16px;
+      position: relative;
+    }
+    .step::before {
+      content: "";
+      position: absolute;
+      left: -18px;
+      top: 30px;
+      width: 18px;
+      border-top: 1px solid rgba(92, 184, 255, 0.32);
     }
     .step-head {
       display: flex;
@@ -226,6 +246,10 @@
     .file-picker input[type="file"] {
       width: 100%;
       color: var(--cyd-text-soft);
+    }
+    .file-picker small {
+      color: var(--cyd-text-dim);
+      font-weight: 500;
     }
     .actions {
       margin-top: 2px;
@@ -404,10 +428,24 @@
             </label>
             <div class="summary" id="mode-summary">Current mode: Preserve Data. LittleFS at <code>0x310000</code> will not be overwritten.</div>
             <p class="release-note" id="release-note">Loading GitHub release assets…</p>
+            <label class="file-picker">
+              <span>Optional local release files</span>
+              <input id="local-release-files" type="file" accept=".bin,application/octet-stream" multiple>
+              <small>Upload <code>bootloader.bin</code>, <code>partitions.bin</code>, <code>firmware.bin</code> (and <code>littlefs.bin</code> for Full Restore) to flash even if proxy or release links fail.</small>
+            </label>
+            <div class="status-text" id="local-release-status">Using online release files by default.</div>
           <div class="meta-grid">
             <div class="meta-item">
               <span>Build Time</span>
               <strong id="build-date">Checking…</strong>
+            </div>
+            <div class="meta-item">
+              <span>API Route</span>
+              <strong id="api-proxy-status">Checking…</strong>
+            </div>
+            <div class="meta-item">
+              <span>Release Asset Route</span>
+              <strong id="asset-proxy-status">Idle</strong>
             </div>
           </div>
 
@@ -531,11 +569,15 @@
     const flashButton = document.getElementById("flash-button");
     const backupButton = document.getElementById("backup-button");
     const restoreFileInput = document.getElementById("restore-file");
+    const localReleaseInput = document.getElementById("local-release-files");
+    const localReleaseStatus = document.getElementById("local-release-status");
     const summary = document.getElementById("mode-summary");
     const flashProgress = document.getElementById("flash-progress");
     const flashStatus = document.getElementById("flash-status");
     const releaseNote = document.getElementById("release-note");
     const buildDate = document.getElementById("build-date");
+    const apiProxyStatus = document.getElementById("api-proxy-status");
+    const assetProxyStatus = document.getElementById("asset-proxy-status");
     const ghproxyToggle = document.getElementById("ghproxy-toggle");
     const eraseRadio = document.querySelector("input[value='erase']");
     const eraseOption = eraseRadio.closest(".option");
@@ -556,6 +598,7 @@
     let restoreInProgress = false;
     let flashAvailable = false;
     let esptoolModulePromise = null;
+    let localReleaseFiles = new Map();
     const pageLocale = document.documentElement.lang || navigator.language || undefined;
 
     function toHex(value) {
@@ -592,6 +635,20 @@
         return `${fallback} (${error.message})`;
       }
       return fallback;
+    }
+
+    function getPartFileName(path, fallbackName) {
+      if (typeof path !== "string") return fallbackName;
+      const sanitizedPath = path.split("#")[0].split("?")[0];
+      return sanitizedPath.split("/").pop() || fallbackName;
+    }
+
+    function setApiProxyStatus(text) {
+      apiProxyStatus.textContent = text;
+    }
+
+    function setAssetProxyStatus(text) {
+      assetProxyStatus.textContent = text;
     }
 
     function logLine(message, level = "info", source = "system") {
@@ -685,7 +742,9 @@
 
     function syncActionButtons() {
       const busy = anyTransferInProgress();
-      setFlashButtonEnabled(serialSupported && flashAvailable && !!currentManifest && !busy);
+      const mode = getSelectedMode();
+      const localReady = requiredByMode[mode].every((name) => localReleaseFiles.has(name));
+      setFlashButtonEnabled(serialSupported && (flashAvailable || localReady) && !!currentManifest && !busy);
       backupButton.disabled = !serialSupported || busy;
       restoreFileInput.disabled = busy;
     }
@@ -724,6 +783,20 @@
       }
     }
 
+    function updateLocalReleaseSummary() {
+      const files = Array.from(localReleaseInput.files || []);
+      localReleaseFiles = new Map(files.map((file) => [file.name.toLowerCase(), file]));
+      if (!files.length) {
+        localReleaseStatus.textContent = "Using online release files by default.";
+        return;
+      }
+      const supportedNames = Array.from(new Set(Object.values(requiredByMode).flat()));
+      const recognized = supportedNames.filter((name) => localReleaseFiles.has(name));
+      localReleaseStatus.textContent = recognized.length
+        ? `Local release files loaded: ${recognized.join(", ")}.`
+        : "No recognized release file names found. Expected: bootloader.bin, partitions.bin, firmware.bin, littlefs.bin.";
+    }
+
     async function updateMode(mode) {
       const response = await fetch(manifests[mode]);
       if (!response.ok) {
@@ -743,6 +816,9 @@
       }
       currentManifest = manifest;
       summary.textContent = summaryText[mode];
+      if (!localReleaseFiles.size) {
+        setAssetProxyStatus(ghproxyToggle.checked ? "gh-proxy.org (preferred)" : "Direct GitHub (preferred)");
+      }
       logLine(`Flash mode switched to ${mode === "preserve" ? "Preserve Data" : "Full Restore"}.`, "info", "flash");
     }
 
@@ -785,12 +861,14 @@
             headers: { Accept: "application/vnd.github+json" },
           });
           if (!response.ok) throw new Error(`${source.label} ${response.status}`);
+          setApiProxyStatus(source.label);
           return await response.json();
         } catch (error) {
           lastError = error;
           logLine("Release check failed, retrying…", "warn", "release");
         }
       }
+      setApiProxyStatus("Unavailable");
       throw lastError || new Error("Failed to load release metadata");
     }
 
@@ -800,10 +878,11 @@
         const assetNames = new Set((release.assets || []).map((asset) => asset.name));
         const preserveReady = requiredByMode.preserve.every((name) => assetNames.has(name));
         const eraseReady = requiredByMode.erase.every((name) => assetNames.has(name));
+        const localPreserveReady = requiredByMode.preserve.every((name) => localReleaseFiles.has(name));
 
         updateBuildMetadata(release);
 
-        if (!preserveReady) {
+        if (!preserveReady && !localPreserveReady) {
           flashAvailable = false;
           updateReleaseNote("The latest release is missing required firmware files. Flashing is unavailable.", true);
           markEraseUnavailable();
@@ -941,6 +1020,13 @@
           if (!response.ok) {
             throw new Error(`${response.status} ${response.statusText}`);
           }
+          if (candidate.startsWith(`${firmwareProxyPrefix}${githubDownloadPrefix}`)) {
+            setAssetProxyStatus("gh-proxy.org");
+          } else if (candidate.startsWith(`${akamsProxyPrefix}${githubDownloadPrefix}`)) {
+            setAssetProxyStatus("github.akams.cn");
+          } else {
+            setAssetProxyStatus("Direct GitHub");
+          }
           if (candidate !== partPath) {
             logLine(`Downloaded ${partFileName} via ${attemptLabel}.`, "warn", "flash");
           }
@@ -967,11 +1053,22 @@
       const files = [];
       for (let index = 0; index < parts.length; index += 1) {
         const part = parts[index];
-        const partFileName = typeof part.path === "string" ? part.path.split("/").pop() || `part-${index + 1}.bin` : `part-${index + 1}.bin`;
-        setFlashStatus(`Downloading ${partFileName} (${index + 1}/${parts.length})...`, false, "wait");
-        const data = await downloadPartData(part.path, partFileName);
+        const partFileName = getPartFileName(part.path, `part-${index + 1}.bin`);
+        const localFile = localReleaseFiles.get(partFileName.toLowerCase());
+        let data;
+        if (localFile) {
+          setFlashStatus(`Loading ${partFileName} from local release file (${index + 1}/${parts.length})...`, false, "wait");
+          setAssetProxyStatus("Local Upload");
+          data = await readFileAsUint8Array(localFile);
+          logLine(`Loaded local ${partFileName} (${formatSize(data.length)}).`, "info", "flash");
+        } else {
+          setFlashStatus(`Downloading ${partFileName} (${index + 1}/${parts.length})...`, false, "wait");
+          data = await downloadPartData(part.path, partFileName);
+        }
         files.push({ name: partFileName, data, address: part.offset });
-        logLine(`Downloaded ${partFileName} (${formatSize(data.length)}).`, "info", "flash");
+        if (!localFile) {
+          logLine(`Downloaded ${partFileName} (${formatSize(data.length)}).`, "info", "flash");
+        }
       }
       return files;
     }
@@ -1203,10 +1300,29 @@
       syncActionButtons();
     });
 
+    localReleaseInput.addEventListener("change", () => {
+      updateLocalReleaseSummary();
+      const selectedMode = getSelectedMode();
+      const localReady = requiredByMode[selectedMode].every((name) => localReleaseFiles.has(name));
+      if (localReady) {
+        flashAvailable = true;
+        updateReleaseNote("Using uploaded local release files for flashing.");
+      }
+      if (localReleaseFiles.size) {
+        setAssetProxyStatus("Local Upload");
+      } else {
+        setAssetProxyStatus(ghproxyToggle.checked ? "gh-proxy.org (preferred)" : "Direct GitHub (preferred)");
+      }
+      syncActionButtons();
+    });
+
     flashButton.addEventListener("click", handleFlash);
     backupButton.addEventListener("click", handleBackupAction);
 
     logLine("Initializing page…", "wait");
+    setApiProxyStatus("Checking…");
+    setAssetProxyStatus("Checking…");
+    updateLocalReleaseSummary();
     updateBackupSummary({ shouldLog: false });
     if (!serialSupported) {
       setFlashStatus("Web Serial is not supported in this browser. Flashing is unavailable.", true);
