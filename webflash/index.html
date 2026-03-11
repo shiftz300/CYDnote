@@ -650,6 +650,16 @@
       return `${Math.round(size / 1024)} KB`;
     }
 
+    function getFlashFileSize(file) {
+      const sizeBytes = file?.sizeBytes ?? file?.data?.length;
+      const size = Number(sizeBytes || 0);
+      return Number.isFinite(size) && size > 0 ? size : 0;
+    }
+
+    function getTotalFlashSize(files) {
+      return files.reduce((total, file) => total + getFlashFileSize(file), 0);
+    }
+
     function formatTimestamp(value) {
       const date = value ? new Date(value) : null;
       if (!date || Number.isNaN(date.getTime())) {
@@ -982,12 +992,27 @@
     }
 
     function updateFlashProgress(files, fileIndex, writtenBytes, totalBytes) {
-      const percentPerFile = 100 / files.length;
-      const percent = Math.min(100, Math.round((fileIndex * percentPerFile) + ((writtenBytes / totalBytes) * percentPerFile)));
       const fileName = files[fileIndex]?.name || `part ${fileIndex + 1}`;
+      const totalFlashBytes = getTotalFlashSize(files);
+      const completedFlashBytes = files.slice(0, fileIndex).reduce((total, file) => total + getFlashFileSize(file), 0);
+      const currentFileSize = getFlashFileSize(files[fileIndex]);
+      let currentWrittenBytes = 0;
+      if (currentFileSize > 0 && totalBytes > 0) {
+        const transferProgressRatio = writtenBytes / totalBytes;
+        const currentRatio = Math.min(1, Math.max(0, transferProgressRatio));
+        currentWrittenBytes = Math.round(currentFileSize * currentRatio);
+      } else if (currentFileSize > 0) {
+        currentWrittenBytes = Math.min(currentFileSize, Math.max(0, writtenBytes));
+      }
+      const overallWrittenBytes = completedFlashBytes + currentWrittenBytes;
+      // Prefer the known total firmware bytes, then the current file size, then the loader-reported total.
+      const displayTotalBytes = totalFlashBytes || currentFileSize || Math.max(0, totalBytes);
+      const percent = totalFlashBytes > 0
+        ? Math.min(100, Math.round((overallWrittenBytes / totalFlashBytes) * 100))
+        : 0;
       flashProgress.hidden = false;
       flashProgress.value = percent;
-      flashStatus.textContent = `Writing ${fileName}... ${percent}% (${Math.round(writtenBytes / 1024)} KB / ${Math.round(totalBytes / 1024)} KB transferred)`;
+      flashStatus.textContent = `Writing ${fileName}... ${percent}% (${formatSize(overallWrittenBytes)} / ${formatSize(displayTotalBytes)})`;
     }
 
     function updateRestoreProgress(target, writtenBytes, totalBytes) {
@@ -1136,7 +1161,7 @@
           setFlashStatus(`Downloading ${partFileName} (${index + 1}/${parts.length})...`, false, "wait");
           data = await downloadPartData(part.path, partFileName);
         }
-        files.push({ name: partFileName, data, address: part.offset });
+        files.push({ name: partFileName, data, address: part.offset, sizeBytes: data.length });
         if (!localFile) {
           logLine(`Downloaded ${partFileName} (${formatSize(data.length)}).`, "info", "flash");
         }
