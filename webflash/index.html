@@ -935,25 +935,25 @@
 
       for (let index = 0; index < candidates.length; index += 1) {
         const candidate = candidates[index];
-        const responseLabel = index === 0 ? "primary URL" : `fallback URL #${index}`;
+        const attemptLabel = index === 0 ? "primary URL" : `fallback URL #${index}`;
         try {
           const response = await fetch(candidate);
           if (!response.ok) {
             throw new Error(`${response.status} ${response.statusText}`);
           }
           if (candidate !== partPath) {
-            logLine(`Downloaded ${partFileName} via ${responseLabel}.`, "warn", "flash");
+            logLine(`Downloaded ${partFileName} via ${attemptLabel}.`, "warn", "flash");
           }
           return new Uint8Array(await response.arrayBuffer());
         } catch (error) {
           lastError = error;
           if (index < candidates.length - 1) {
-            logLine(`${partFileName} failed on ${responseLabel}, retrying fallback...`, "warn", "flash");
+            logLine(`${partFileName} failed on ${attemptLabel}, retrying fallback...`, "warn", "flash");
           }
         }
       }
 
-      const manualLink = candidates.find((candidate) => candidate.startsWith(githubDownloadPrefix)) || candidates[0] || partPath;
+      const manualLink = candidates.find((candidate) => candidate.startsWith(githubDownloadPrefix)) || partPath;
       throw new Error(`${partFileName} download failed. Try opening this link manually: ${manualLink}. ${formatErrorMessage(lastError, "Last error")}`);
     }
 
