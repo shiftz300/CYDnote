@@ -56,9 +56,6 @@ private:
     bool ime_font_acquired;
     uint32_t ime_cursor_anchor_pos;
     bool ime_cursor_anchor_valid;
-    bool scroll_to_start_pending;
-    bool scroll_to_end_pending;
-    bool programmatic_scroll_in_progress;
     String current_file;
     std::function<void()> on_exit_cb;
     std::function<void()> on_save_cb;
@@ -71,7 +68,6 @@ public:
                save_popup(nullptr), save_popup_timer(nullptr),
                ime_cand_syncing(false), ime_is_k9_mode(false), ime_cand_count(0), ime_cand_page(0),
                ime_visible(false), large_doc_mode(false), read_chunk_mode(false), read_chunk_has_prev(false), read_chunk_has_next(false), ime_font_acquired(false), ime_cursor_anchor_pos(0), ime_cursor_anchor_valid(false),
-               scroll_to_start_pending(false), scroll_to_end_pending(false), programmatic_scroll_in_progress(false),
                current_file(""), on_exit_cb(nullptr), on_save_cb(nullptr), on_read_prev_chunk_cb(nullptr), on_read_next_chunk_cb(nullptr) {
         memset(ime_compose, 0, sizeof(ime_compose));
         memset(ime_cands, 0, sizeof(ime_cands));
@@ -382,8 +378,8 @@ public:
         if (!textarea) return;
         applyLargeDocPerfMode(content.length());
         lv_textarea_set_text(textarea, content.c_str());
-        if (anchor_end) moveCursorAndViewToEnd();
-        else moveCursorAndViewToStart();
+        if (anchor_end) scrollViewToEnd();
+        else scrollViewToStart();
         refreshReadChunkButtons();
     }
 
@@ -616,10 +612,6 @@ private:
     static void textarea_scroll_event_cb(lv_event_t* e) {
         Editor* ed = (Editor*)lv_event_get_user_data(e);
         if (!ed) return;
-        if (lv_event_get_code(e) == LV_EVENT_SCROLL_BEGIN && !ed->programmatic_scroll_in_progress) {
-            ed->scroll_to_start_pending = false;
-            ed->scroll_to_end_pending = false;
-        }
         ed->refreshReadChunkButtons();
     }
 
@@ -657,39 +649,12 @@ private:
         ed->on_read_next_chunk_cb();
     }
 
-    static void async_scroll_top_cb(void* user_data) {
-        Editor* ed = (Editor*)user_data;
-        if (!ed || !ed->textarea || !ed->scroll_to_start_pending) return;
-        ed->scroll_to_start_pending = false;
-        ed->programmatic_scroll_in_progress = true;
-        lv_obj_scroll_to_y(ed->textarea, 0, LV_ANIM_OFF);
-        ed->programmatic_scroll_in_progress = false;
-        ed->refreshReadChunkButtons();
-    }
-
-    static void async_scroll_bottom_cb(void* user_data) {
-        Editor* ed = (Editor*)user_data;
-        if (!ed || !ed->textarea || !ed->scroll_to_end_pending) return;
-        ed->scroll_to_end_pending = false;
-        ed->programmatic_scroll_in_progress = true;
-        lv_obj_update_layout(ed->textarea);
-        int32_t bottom_offset = lv_obj_get_scroll_bottom(ed->textarea);
-        lv_obj_scroll_by(ed->textarea, 0, bottom_offset, LV_ANIM_OFF);
-        ed->programmatic_scroll_in_progress = false;
-        ed->refreshReadChunkButtons();
-    }
-
     void moveCursorAndViewToStart() {
         if (!textarea) return;
         lv_textarea_set_cursor_pos(textarea, 0);
-        scroll_to_start_pending = true;
-        scroll_to_end_pending = false;
-        programmatic_scroll_in_progress = true;
-        lv_obj_scroll_to_y(textarea, 0, LV_ANIM_OFF);
-        programmatic_scroll_in_progress = false;
         ime_cursor_anchor_pos = 0;
         ime_cursor_anchor_valid = true;
-        lv_async_call(async_scroll_top_cb, this);
+        scrollViewToStart();
     }
 
     void moveCursorAndViewToEnd() {
@@ -697,11 +662,24 @@ private:
         const char* text = lv_textarea_get_text(textarea);
         uint32_t len = text ? (uint32_t)strlen(text) : 0;
         lv_textarea_set_cursor_pos(textarea, (int32_t)len);
-        scroll_to_end_pending = true;
-        scroll_to_start_pending = false;
         ime_cursor_anchor_pos = len;
         ime_cursor_anchor_valid = true;
-        lv_async_call(async_scroll_bottom_cb, this);
+        scrollViewToEnd();
+    }
+
+    void scrollViewToStart() {
+        if (!textarea) return;
+        lv_obj_update_layout(textarea);
+        lv_obj_scroll_to_y(textarea, 0, LV_ANIM_OFF);
+        refreshReadChunkButtons();
+    }
+
+    void scrollViewToEnd() {
+        if (!textarea) return;
+        lv_obj_update_layout(textarea);
+        int32_t bottom_offset = lv_obj_get_scroll_bottom(textarea);
+        lv_obj_scroll_by(textarea, 0, bottom_offset, LV_ANIM_OFF);
+        refreshReadChunkButtons();
     }
 
 };
