@@ -367,6 +367,8 @@ public:
         lv_obj_set_style_bg_color(file_list, lv_color_hex(0x000000), 0);
         lv_obj_set_style_border_color(file_list, lv_color_hex(0x303030), 0);
         lv_obj_set_style_radius(file_list, 4, 0);
+        lv_obj_add_event_cb(file_list, file_list_scroll_event_cb, LV_EVENT_SCROLL_BEGIN, this);
+        lv_obj_add_event_cb(file_list, file_list_scroll_event_cb, LV_EVENT_SCROLL, this);
 
         empty_label = lv_label_create(file_list);
         lv_label_set_text(empty_label, "");
@@ -863,6 +865,14 @@ private:
         if (!fm || !fm->dialog_input) return;
         fm->dialog_ime_cursor_anchor_pos = lv_textarea_get_cursor_pos(fm->dialog_input);
         fm->dialog_ime_cursor_anchor_valid = true;
+    }
+
+    static void file_list_scroll_event_cb(lv_event_t* e) {
+        FileManager* fm = (FileManager*)lv_event_get_user_data(e);
+        if (!fm) return;
+        if (fm->scan_in_progress && fm->reset_scroll_pending) {
+            fm->reset_scroll_pending = false;
+        }
     }
 
     void createDriveButton(const char* label, char drive, bool enabled) {
