@@ -462,9 +462,6 @@
                 <span>Backup file</span>
                 <input id="restore-file" type="file" accept=".bin,application/octet-stream">
               </label>
-              <div class="actions">
-                <button id="restore-button" type="button">Upload and Restore</button>
-              </div>
               <progress class="progress" id="restore-progress" value="0" max="100" hidden></progress>
               <div class="status-text" id="restore-status">Choose a backup file to restore.</div>
             </div>
@@ -533,7 +530,6 @@
 
     const flashButton = document.getElementById("flash-button");
     const backupButton = document.getElementById("backup-button");
-    const restoreButton = document.getElementById("restore-button");
     const restoreFileInput = document.getElementById("restore-file");
     const summary = document.getElementById("mode-summary");
     const flashProgress = document.getElementById("flash-progress");
@@ -691,8 +687,17 @@
       const busy = anyTransferInProgress();
       setFlashButtonEnabled(serialSupported && flashAvailable && !!currentManifest && !busy);
       backupButton.disabled = !serialSupported || busy;
-      restoreButton.disabled = !serialSupported || busy || !restoreFileInput.files?.length;
       restoreFileInput.disabled = busy;
+    }
+
+    function updateBackupActionLabel() {
+      const scope = document.querySelector("input[name='backup-scope']:checked").value;
+      const hasRestoreFile = !!restoreFileInput.files?.length;
+      if (hasRestoreFile) {
+        backupButton.textContent = scope === "full" ? "Restore Full Backup" : "Upload and Restore";
+      } else {
+        backupButton.textContent = scope === "full" ? "Download Full Backup" : "Download Backup";
+      }
     }
 
     function getSelectedMode() {
@@ -712,10 +717,8 @@
 
     function updateBackupSummary({ shouldLog = true } = {}) {
       const target = getSelectedBackupTarget();
-      const scope = document.querySelector("input[name='backup-scope']:checked").value;
       backupSummary.textContent = `${target.label}: ${toHex(target.offset)} · ${formatSize(target.size)}`;
-      backupButton.textContent = scope === "full" ? "Download Full Backup" : "Download Backup";
-      restoreButton.textContent = scope === "full" ? "Restore Full Backup" : "Upload and Restore";
+      updateBackupActionLabel();
       if (shouldLog) {
         logLine(`Scope changed to ${target.label}.`, "info", "backup");
       }
@@ -899,6 +902,60 @@
       return new Uint8Array(await file.arrayBuffer());
     }
 
+    function getFlashDownloadCandidates(url) {
+      const candidates = [];
+      if (typeof url !== "string" || !url.trim()) return candidates;
+
+      const pushCandidate = (value) => {
+        if (typeof value === "string" && value.trim() && !candidates.includes(value)) {
+          candidates.push(value);
+        }
+      };
+
+      pushCandidate(url);
+      if (url.startsWith(githubDownloadPrefix)) {
+        pushCandidate(`${firmwareProxyPrefix}${url}`);
+        pushCandidate(`${akamsProxyPrefix}${url}`);
+      } else if (url.startsWith(`${firmwareProxyPrefix}${githubDownloadPrefix}`)) {
+        const directUrl = url.slice(firmwareProxyPrefix.length);
+        pushCandidate(directUrl);
+        pushCandidate(`${akamsProxyPrefix}${directUrl}`);
+      } else if (url.startsWith(`${akamsProxyPrefix}${githubDownloadPrefix}`)) {
+        const directUrl = url.slice(akamsProxyPrefix.length);
+        pushCandidate(directUrl);
+        pushCandidate(`${firmwareProxyPrefix}${directUrl}`);
+      }
+
+      return candidates;
+    }
+
+    async function downloadPartData(partPath, partFileName) {
+      const candidates = getFlashDownloadCandidates(partPath);
+      let lastError = null;
+
+      for (let index = 0; index < candidates.length; index += 1) {
+        const candidate = candidates[index];
+        const responseLabel = index === 0 ? "primary URL" : `fallback URL #${index}`;
+        try {
+          const response = await fetch(candidate);
+          if (!response.ok) {
+            throw new Error(`${response.status} ${response.statusText}`);
+          }
+          if (candidate !== partPath) {
+            logLine(`Downloaded ${partFileName} via ${responseLabel}.`, "warn", "flash");
+          }
+          return new Uint8Array(await response.arrayBuffer());
+        } catch (error) {
+          lastError = error;
+          if (index < candidates.length - 1) {
+            logLine(`${partFileName} failed on ${responseLabel}, retrying fallback...`, "warn", "flash");
+          }
+        }
+      }
+
+      throw new Error(`${partFileName} download failed. Try opening this link manually: ${partPath}. ${formatErrorMessage(lastError, "Last error")}`);
+    }
+
     async function downloadFlashFiles() {
       const build = currentManifest?.builds?.[0];
       const parts = build?.parts || [];
@@ -911,11 +968,7 @@
         const part = parts[index];
         const partFileName = typeof part.path === "string" ? part.path.split("/").pop() || `part-${index + 1}.bin` : `part-${index + 1}.bin`;
         setFlashStatus(`Downloading ${partFileName} (${index + 1}/${parts.length})...`, false, "wait");
-        const response = await fetch(part.path);
-        if (!response.ok) {
-          throw new Error(`Cannot download ${partFileName}: ${response.status} ${response.statusText}`);
-        }
-        const data = new Uint8Array(await response.arrayBuffer());
+        const data = await downloadPartData(part.path, partFileName);
         files.push({ name: partFileName, data, address: part.offset });
         logLine(`Downloaded ${partFileName} (${formatSize(data.length)}).`, "info", "flash");
       }
@@ -1079,6 +1132,14 @@
       }
     }
 
+    function handleBackupAction() {
+      if (restoreFileInput.files?.length) {
+        handleRestore();
+        return;
+      }
+      handleBackup();
+    }
+
     flashModeRadios.forEach((radio) => {
       radio.addEventListener("change", async () => {
         if (!radio.checked) return;
@@ -1117,6 +1178,7 @@
       const file = restoreFileInput.files?.[0];
       if (!file) {
         setRestoreStatus("Choose a backup file to restore.");
+        updateBackupActionLabel();
         syncActionButtons();
         return;
       }
@@ -1136,12 +1198,12 @@
       } else {
         setRestoreStatus(`Selected ${file.name} for ${target.label} restore.`, false, "info");
       }
+      updateBackupActionLabel();
       syncActionButtons();
     });
 
     flashButton.addEventListener("click", handleFlash);
-    backupButton.addEventListener("click", handleBackup);
-    restoreButton.addEventListener("click", handleRestore);
+    backupButton.addEventListener("click", handleBackupAction);
 
     logLine("Initializing page…", "wait");
     updateBackupSummary({ shouldLog: false });
