@@ -1034,6 +1034,22 @@
       return new Uint8Array(await file.arrayBuffer());
     }
 
+    function uint8ArrayToBinaryString(data) {
+      let binary = "";
+      const binaryConversionChunkSize = 0x8000;
+      for (let offset = 0; offset < data.length; offset += binaryConversionChunkSize) {
+        binary += Array.from(
+          data.subarray(offset, offset + binaryConversionChunkSize),
+          (byte) => String.fromCharCode(byte),
+        ).join("");
+      }
+      return binary;
+    }
+
+    async function readFileAsBinaryString(file) {
+      return uint8ArrayToBinaryString(await readFileAsUint8Array(file));
+    }
+
     function getFlashDownloadCandidates(url) {
       const candidates = [];
       const candidateSet = new Set();
@@ -1085,7 +1101,7 @@
           if (candidate !== partPath) {
             logLine(`Downloaded ${partFileName} via ${attemptLabel}.`, "info", "flash");
           }
-          return new Uint8Array(await response.arrayBuffer());
+          return uint8ArrayToBinaryString(new Uint8Array(await response.arrayBuffer()));
         } catch (error) {
           lastError = error;
           if (index < candidates.length - 1) {
@@ -1114,7 +1130,7 @@
         if (localFile) {
           setFlashStatus(`Loading ${partFileName} from local release file (${index + 1}/${parts.length})...`, false, "wait");
           setAssetProxyStatus(assetRouteStatus.local);
-          data = await readFileAsUint8Array(localFile);
+          data = await readFileAsBinaryString(localFile);
           logLine(`Loaded local ${partFileName} (${formatSize(data.length)}).`, "info", "flash");
         } else {
           setFlashStatus(`Downloading ${partFileName} (${index + 1}/${parts.length})...`, false, "wait");
@@ -1244,7 +1260,7 @@
 
       let transport = null;
       try {
-        const data = await readFileAsUint8Array(file);
+        const data = await readFileAsBinaryString(file);
         const { ESPLoader, Transport } = await ensureEsptoolModule();
         const port = await navigator.serial.requestPort({});
         transport = new Transport(port, true);
