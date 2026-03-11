@@ -637,6 +637,7 @@
     let esptoolModulePromise = null;
     let localReleaseFiles = new Map();
     let releaseAssetsByName = new Map();
+    let releaseAssetUrlsByName = new Map();
     const pageLocale = document.documentElement.lang || navigator.language || undefined;
 
     function toHex(value) {
@@ -862,6 +863,10 @@
       return Number.isFinite(size) && size > 0 ? size : null;
     }
 
+    function getReleaseAssetDownloadUrl(fileName) {
+      return releaseAssetUrlsByName.get(String(fileName || "").toLowerCase()) || "";
+    }
+
     async function updateMode(mode) {
       const response = await fetch(manifests[mode]);
       if (!response.ok) {
@@ -949,6 +954,11 @@
             .filter((asset) => typeof asset?.name === "string")
             .map((asset) => [asset.name.toLowerCase(), asset]),
         );
+        releaseAssetUrlsByName = new Map(
+          assets
+            .filter((asset) => typeof asset?.name === "string" && typeof asset?.browser_download_url === "string")
+            .map((asset) => [asset.name.toLowerCase(), asset.browser_download_url]),
+        );
         const assetNames = new Set(assets.map((asset) => asset.name));
         const preserveReady = requiredByMode.preserve.every((name) => assetNames.has(name));
         const eraseReady = requiredByMode.erase.every((name) => assetNames.has(name));
@@ -982,6 +992,7 @@
         syncActionButtons();
       } catch (error) {
         releaseAssetsByName = new Map();
+        releaseAssetUrlsByName = new Map();
         buildDate.textContent = "Unknown";
         flashAvailable = true;
         updateReleaseNote("Release check failed. Flashing is still available.", true);
@@ -1176,7 +1187,8 @@
           logLine(`Loaded local ${partFileName} (${formatSize(data.length)}).`, "info", "flash");
         } else {
           setFlashStatus(`Downloading ${partFileName} (${index + 1}/${parts.length})...`, false, "wait");
-          data = await downloadPartData(part.path, partFileName, getExpectedReleaseAssetSize(partFileName));
+          const partPath = getReleaseAssetDownloadUrl(partFileName) || part.path;
+          data = await downloadPartData(partPath, partFileName, getExpectedReleaseAssetSize(partFileName));
         }
         files.push({ name: partFileName, data, address: part.offset, sizeBytes: data.length });
         if (!localFile) {
