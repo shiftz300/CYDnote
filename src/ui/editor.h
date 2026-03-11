@@ -21,7 +21,6 @@ private:
     static constexpr uint16_t IME_CAND_MAX = 160;
     static constexpr size_t LARGE_DOC_PERF_THRESHOLD = 2 * 1024;
     static constexpr int32_t CHUNK_NAV_BTN_SIZE = 24;
-    static constexpr int32_t CHUNK_NAV_EDGE_THRESHOLD = 6;
     static constexpr lv_opa_t CHUNK_NAV_BTN_BG_OPA = static_cast<lv_opa_t>((LV_OPA_COVER * 75) / 100);
     lv_obj_t* screen;
     lv_obj_t* textarea;
@@ -206,9 +205,6 @@ public:
         lv_obj_set_style_height(textarea, editor_cursor_h, LV_PART_CURSOR);
         lv_obj_add_event_cb(textarea, textarea_cursor_anchor_event_cb, LV_EVENT_CLICKED, this);
         lv_obj_add_event_cb(textarea, textarea_cursor_anchor_event_cb, LV_EVENT_VALUE_CHANGED, this);
-        lv_obj_add_event_cb(textarea, textarea_scroll_event_cb, LV_EVENT_SCROLL_BEGIN, this);
-        lv_obj_add_event_cb(textarea, textarea_scroll_event_cb, LV_EVENT_SCROLL, this);
-        lv_obj_add_event_cb(textarea, textarea_scroll_event_cb, LV_EVENT_SCROLL_END, this);
         ime_cursor_anchor_pos = lv_textarea_get_cursor_pos(textarea);
         ime_cursor_anchor_valid = true;
 
@@ -349,13 +345,8 @@ public:
 
     void setReadChunkMode(bool enabled) {
         read_chunk_mode = enabled;
-        if (textarea) {
-            bool interactive = !read_chunk_mode && !large_doc_mode;
-            lv_textarea_set_cursor_click_pos(textarea, interactive);
-            lv_textarea_set_text_selection(textarea, interactive);
-            lv_obj_set_style_bg_opa(textarea, read_chunk_mode ? LV_OPA_TRANSP : LV_OPA_70, LV_PART_CURSOR);
-        }
         if (read_chunk_mode && ime_visible) setIMEVisible(false);
+        syncTextareaInteractionMode();
         refreshReadChunkButtons();
     }
 
@@ -378,13 +369,9 @@ public:
         if (!textarea) return;
         applyLargeDocPerfMode(content.length());
         lv_textarea_set_text(textarea, content.c_str());
-        uint32_t len = (uint32_t)content.length();
-        uint32_t cursor_target = anchor_end ? len : 0U;
-        lv_textarea_set_cursor_pos(textarea, (int32_t)cursor_target);
-        ime_cursor_anchor_pos = cursor_target;
-        ime_cursor_anchor_valid = true;
-        if (anchor_end) scrollViewToEnd();
-        else scrollViewToStart();
+        if (anchor_end) moveCursorAndViewToEnd();
+        else moveCursorAndViewToStart();
+        clearReadChunkFocus();
         refreshReadChunkButtons();
     }
 
@@ -456,10 +443,7 @@ private:
         large_doc_mode = want_large_mode;
 
         // Large doc: reduce expensive cursor hit-test/update path during scroll.
-        if (!read_chunk_mode) {
-            lv_textarea_set_cursor_click_pos(textarea, !large_doc_mode);
-            lv_textarea_set_text_selection(textarea, !large_doc_mode);
-        }
+        syncTextareaInteractionMode();
     }
 
     void closeSavePopup() {
@@ -512,8 +496,8 @@ private:
     }
 
     void refreshReadChunkButtons() {
-        updateReadChunkButtonVisibility(read_prev_btn, read_chunk_mode && read_chunk_has_prev && isNearTopEdge());
-        updateReadChunkButtonVisibility(read_next_btn, read_chunk_mode && read_chunk_has_next && isNearBottomEdge());
+        updateReadChunkButtonVisibility(read_prev_btn, read_chunk_mode && read_chunk_has_prev);
+        updateReadChunkButtonVisibility(read_next_btn, read_chunk_mode && read_chunk_has_next);
     }
 
     void updateReadChunkButtonVisibility(lv_obj_t* btn, bool visible) {
@@ -522,14 +506,18 @@ private:
         else lv_obj_add_flag(btn, LV_OBJ_FLAG_HIDDEN);
     }
 
-    bool isNearTopEdge() const {
-        if (!textarea) return false;
-        return lv_obj_get_scroll_top(textarea) <= CHUNK_NAV_EDGE_THRESHOLD;
+    void syncTextareaInteractionMode() {
+        if (!textarea) return;
+        bool interactive = !read_chunk_mode && !large_doc_mode;
+        lv_textarea_set_cursor_click_pos(textarea, interactive);
+        lv_textarea_set_text_selection(textarea, interactive);
+        lv_obj_set_style_bg_opa(textarea, read_chunk_mode ? LV_OPA_TRANSP : LV_OPA_70, LV_PART_CURSOR);
+        if (read_chunk_mode) clearReadChunkFocus();
     }
 
-    bool isNearBottomEdge() const {
-        if (!textarea) return false;
-        return lv_obj_get_scroll_bottom(textarea) <= CHUNK_NAV_EDGE_THRESHOLD;
+    void clearReadChunkFocus() {
+        if (!textarea || !read_chunk_mode) return;
+        lv_obj_clear_state(textarea, LV_STATE_FOCUSED);
     }
 
     void setIMEVisible(bool visible) {
@@ -612,12 +600,6 @@ private:
         if (ed->read_chunk_mode) return;
         ed->ime_cursor_anchor_pos = lv_textarea_get_cursor_pos(ed->textarea);
         ed->ime_cursor_anchor_valid = true;
-    }
-
-    static void textarea_scroll_event_cb(lv_event_t* e) {
-        Editor* ed = (Editor*)lv_event_get_user_data(e);
-        if (!ed) return;
-        ed->refreshReadChunkButtons();
     }
 
     static void exit_btn_event_cb(lv_event_t* e) {
