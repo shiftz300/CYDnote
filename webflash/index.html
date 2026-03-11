@@ -953,7 +953,8 @@
         }
       }
 
-      throw new Error(`${partFileName} download failed. Try opening this link manually: ${partPath}. ${formatErrorMessage(lastError, "Last error")}`);
+      const manualLink = candidates.find((candidate) => candidate.startsWith(githubDownloadPrefix)) || candidates[0] || partPath;
+      throw new Error(`${partFileName} download failed. Try opening this link manually: ${manualLink}. ${formatErrorMessage(lastError, "Last error")}`);
     }
 
     async function downloadFlashFiles() {
