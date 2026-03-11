@@ -198,8 +198,8 @@ public:
         lv_obj_set_style_bg_color(textarea, lv_color_hex(0xFFFFFF), LV_PART_CURSOR);
         lv_obj_set_style_bg_opa(textarea, LV_OPA_70, LV_PART_CURSOR);
         lv_obj_set_style_width(textarea, 1, LV_PART_CURSOR);
-        lv_obj_add_flag(textarea, LV_OBJ_FLAG_SCROLL_ELASTIC);
-        lv_obj_add_flag(textarea, LV_OBJ_FLAG_SCROLL_MOMENTUM);
+        lv_obj_clear_flag(textarea, LV_OBJ_FLAG_SCROLL_ELASTIC);
+        lv_obj_clear_flag(textarea, LV_OBJ_FLAG_SCROLL_MOMENTUM);
         lv_obj_set_style_anim_duration(textarea, 260, 0);
         int32_t editor_cursor_h = EDITOR_TEXT_SIZE_PX;
         if (editor_cursor_h < 2) editor_cursor_h = 2;
