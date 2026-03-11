@@ -636,6 +636,7 @@
     let flashAvailable = false;
     let esptoolModulePromise = null;
     let localReleaseFiles = new Map();
+    let releaseAssetsByName = new Map();
     const pageLocale = document.documentElement.lang || navigator.language || undefined;
 
     function toHex(value) {
@@ -856,6 +857,11 @@
         : `No recognized release file names found. Required for ${getSelectedMode() === "erase" ? "Full Restore" : "Preserve Data"}: ${modeRequiredNames.join(", ")}.`;
     }
 
+    function getExpectedReleaseAssetSize(fileName) {
+      const size = Number(releaseAssetsByName.get(String(fileName || "").toLowerCase())?.size);
+      return Number.isFinite(size) && size > 0 ? size : null;
+    }
+
     async function updateMode(mode) {
       const response = await fetch(manifests[mode]);
       if (!response.ok) {
@@ -937,7 +943,13 @@
     async function loadReleaseInfo() {
       try {
         const release = await fetchReleaseInfoWithFallback();
-        const assetNames = new Set((release.assets || []).map((asset) => asset.name));
+        const assets = Array.isArray(release.assets) ? release.assets : [];
+        releaseAssetsByName = new Map(
+          assets
+            .filter((asset) => typeof asset?.name === "string")
+            .map((asset) => [asset.name.toLowerCase(), asset]),
+        );
+        const assetNames = new Set(assets.map((asset) => asset.name));
         const preserveReady = requiredByMode.preserve.every((name) => assetNames.has(name));
         const eraseReady = requiredByMode.erase.every((name) => assetNames.has(name));
         const localPreserveReady = requiredByMode.preserve.every((name) => localReleaseFiles.has(name));
@@ -953,7 +965,7 @@
           return;
         }
 
-        const newestAsset = (release.assets || [])
+        const newestAsset = assets
           .filter((asset) => requiredByMode.preserve.includes(asset.name))
           .sort((left, right) => new Date(right.updated_at || right.created_at || 0) - new Date(left.updated_at || left.created_at || 0))[0];
         const buildStamp = newestAsset ? formatTimestamp(newestAsset.updated_at || newestAsset.created_at) : "Unknown";
@@ -969,6 +981,7 @@
         }
         syncActionButtons();
       } catch (error) {
+        releaseAssetsByName = new Map();
         buildDate.textContent = "Unknown";
         flashAvailable = true;
         updateReleaseNote("Release check failed. Flashing is still available.", true);
@@ -1110,7 +1123,7 @@
       return candidates;
     }
 
-    async function downloadPartData(partPath, partFileName) {
+    async function downloadPartData(partPath, partFileName, expectedSize = null) {
       const candidates = getFlashDownloadCandidates(partPath);
       let lastError = null;
 
@@ -1122,11 +1135,15 @@
           if (!response.ok) {
             throw new Error(`${response.status} ${response.statusText}`);
           }
+          const arrayBuffer = await response.arrayBuffer();
+          if (expectedSize && arrayBuffer.byteLength !== expectedSize) {
+            throw new Error(`size mismatch: expected ${expectedSize} bytes, got ${arrayBuffer.byteLength} bytes`);
+          }
           setAssetProxyStatus(resolveAssetRouteStatus(candidate));
           if (candidate !== partPath) {
             logLine(`Downloaded ${partFileName} via ${attemptLabel}.`, "info", "flash");
           }
-          return uint8ArrayToBinaryString(new Uint8Array(await response.arrayBuffer()));
+          return uint8ArrayToBinaryString(new Uint8Array(arrayBuffer));
         } catch (error) {
           lastError = error;
           if (index < candidates.length - 1) {
@@ -1159,7 +1176,7 @@
           logLine(`Loaded local ${partFileName} (${formatSize(data.length)}).`, "info", "flash");
         } else {
           setFlashStatus(`Downloading ${partFileName} (${index + 1}/${parts.length})...`, false, "wait");
-          data = await downloadPartData(part.path, partFileName);
+          data = await downloadPartData(part.path, partFileName, getExpectedReleaseAssetSize(partFileName));
         }
         files.push({ name: partFileName, data, address: part.offset, sizeBytes: data.length });
         if (!localFile) {
