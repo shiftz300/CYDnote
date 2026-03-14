@@ -144,7 +144,7 @@
  * and can't be drawn in chunks. */
 
 /*The target buffer size for simple layer chunks.*/
-#define LV_DRAW_LAYER_SIMPLE_BUF_SIZE    (12 * 1024)   /*[bytes]*/
+#define LV_DRAW_LAYER_SIMPLE_BUF_SIZE    (24 * 1024)   /*[bytes]*/
 
 /* The stack size of the drawing thread.
  * NOTE: If FreeType or ThorVG is enabled, it is recommended to set it to 32KB or more.
@@ -162,14 +162,14 @@
 	 */
 
 	#define LV_DRAW_SW_SUPPORT_RGB565		1
-	#define LV_DRAW_SW_SUPPORT_RGB565A8		0   /* not used on this display */
-	#define LV_DRAW_SW_SUPPORT_RGB888		1   /* needed for gradients */
-	#define LV_DRAW_SW_SUPPORT_XRGB8888		0   /* not used on this display */
-	#define LV_DRAW_SW_SUPPORT_ARGB8888		1   /* needed for transparency compositing */
-	#define LV_DRAW_SW_SUPPORT_L8			0   /* not used on this display */
-	#define LV_DRAW_SW_SUPPORT_AL88			0   /* not used on this display */
-	#define LV_DRAW_SW_SUPPORT_A8			1   /* needed for font/glyph alpha masks */
-	#define LV_DRAW_SW_SUPPORT_I1			0   /* not used on this display */
+	#define LV_DRAW_SW_SUPPORT_RGB565A8		1
+	#define LV_DRAW_SW_SUPPORT_RGB888		1
+	#define LV_DRAW_SW_SUPPORT_XRGB8888		1
+	#define LV_DRAW_SW_SUPPORT_ARGB8888		1
+	#define LV_DRAW_SW_SUPPORT_L8			1
+	#define LV_DRAW_SW_SUPPORT_AL88			1
+	#define LV_DRAW_SW_SUPPORT_A8			1
+	#define LV_DRAW_SW_SUPPORT_I1			1
 
 	/* Set the number of draw unit.
      * > 1 requires an operating system enabled in `LV_USE_OS`
@@ -190,13 +190,13 @@
         /*Allow buffering some shadow calculation.
         *LV_DRAW_SW_SHADOW_CACHE_SIZE is the max. shadow size to buffer, where shadow size is `shadow_width + radius`
         *Caching has LV_DRAW_SW_SHADOW_CACHE_SIZE^2 RAM cost*/
-        #define LV_DRAW_SW_SHADOW_CACHE_SIZE 0
+        #define LV_DRAW_SW_SHADOW_CACHE_SIZE 128
 
         /* Set number of maximally cached circle data.
         * The circumference of 1/4 circle are saved for anti-aliasing
         * radius * 4 bytes are used per circle (the most often used radiuses are saved)
         * 0: to disable caching */
-        #define LV_DRAW_SW_CIRCLE_CACHE_SIZE 8
+        #define LV_DRAW_SW_CIRCLE_CACHE_SIZE 32
     #endif
 
     #define  LV_USE_DRAW_SW_ASM     LV_DRAW_SW_ASM_NONE
@@ -381,7 +381,7 @@
  *Used by image decoders such as `lv_lodepng` to keep the decoded image in the memory.
  *If size is not set to 0, the decoder will fail to decode when the cache is full.
  *If size is 0, the cache function is not enabled and the decoded mem will be released immediately after use.*/
-#define LV_CACHE_DEF_SIZE       (32 * 1024)
+#define LV_CACHE_DEF_SIZE       (64 * 1024)
 
 /*Default number of image header cache entries. The cache is used to store the headers of images
  *The main logic is like `LV_CACHE_DEF_SIZE` but for image headers.*/
@@ -703,7 +703,7 @@
     /*0: Light mode; 1: Dark mode*/
     #define LV_THEME_DEFAULT_DARK 0
 
-    /*0: Disable grow on press to reduce redraw overhead on resource-constrained targets*/
+    /*0: Disable grow on press to eliminate extra redraw area during press animations*/
     #define LV_THEME_DEFAULT_GROW 0
 
     /*Default transition time in [ms]*/
