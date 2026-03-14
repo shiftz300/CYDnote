@@ -162,14 +162,14 @@
 	 */
 
 	#define LV_DRAW_SW_SUPPORT_RGB565		1
-	#define LV_DRAW_SW_SUPPORT_RGB565A8		1
-	#define LV_DRAW_SW_SUPPORT_RGB888		1
-	#define LV_DRAW_SW_SUPPORT_XRGB8888		1
-	#define LV_DRAW_SW_SUPPORT_ARGB8888		1
-	#define LV_DRAW_SW_SUPPORT_L8			1
-	#define LV_DRAW_SW_SUPPORT_AL88			1
-	#define LV_DRAW_SW_SUPPORT_A8			1
-	#define LV_DRAW_SW_SUPPORT_I1			1
+	#define LV_DRAW_SW_SUPPORT_RGB565A8		0   /* not used on this display */
+	#define LV_DRAW_SW_SUPPORT_RGB888		1   /* needed for gradients */
+	#define LV_DRAW_SW_SUPPORT_XRGB8888		0   /* not used on this display */
+	#define LV_DRAW_SW_SUPPORT_ARGB8888		1   /* needed for transparency compositing */
+	#define LV_DRAW_SW_SUPPORT_L8			0   /* not used on this display */
+	#define LV_DRAW_SW_SUPPORT_AL88			0   /* not used on this display */
+	#define LV_DRAW_SW_SUPPORT_A8			1   /* needed for font/glyph alpha masks */
+	#define LV_DRAW_SW_SUPPORT_I1			0   /* not used on this display */
 
 	/* Set the number of draw unit.
      * > 1 requires an operating system enabled in `LV_USE_OS`
@@ -196,7 +196,7 @@
         * The circumference of 1/4 circle are saved for anti-aliasing
         * radius * 4 bytes are used per circle (the most often used radiuses are saved)
         * 0: to disable caching */
-        #define LV_DRAW_SW_CIRCLE_CACHE_SIZE 4
+        #define LV_DRAW_SW_CIRCLE_CACHE_SIZE 8
     #endif
 
     #define  LV_USE_DRAW_SW_ASM     LV_DRAW_SW_ASM_NONE
@@ -381,11 +381,11 @@
  *Used by image decoders such as `lv_lodepng` to keep the decoded image in the memory.
  *If size is not set to 0, the decoder will fail to decode when the cache is full.
  *If size is 0, the cache function is not enabled and the decoded mem will be released immediately after use.*/
-#define LV_CACHE_DEF_SIZE       0
+#define LV_CACHE_DEF_SIZE       (32 * 1024)
 
 /*Default number of image header cache entries. The cache is used to store the headers of images
  *The main logic is like `LV_CACHE_DEF_SIZE` but for image headers.*/
-#define LV_IMAGE_HEADER_CACHE_DEF_CNT 0
+#define LV_IMAGE_HEADER_CACHE_DEF_CNT 8
 
 /*Number of stops allowed per gradient. Increase this to allow more stops.
  *This adds (sizeof(lv_color_t) + 1) bytes per additional stop*/
@@ -396,7 +396,7 @@
 #define LV_COLOR_MIX_ROUND_OFS  0
 
 /* Add 2 x 32 bit variables to each lv_obj_t to speed up getting style properties */
-#define LV_OBJ_STYLE_CACHE      0
+#define LV_OBJ_STYLE_CACHE      1
 
 /* Add `id` field to `lv_obj_t` */
 #define LV_USE_OBJ_ID           0
@@ -703,8 +703,8 @@
     /*0: Light mode; 1: Dark mode*/
     #define LV_THEME_DEFAULT_DARK 0
 
-    /*1: Enable grow on press*/
-    #define LV_THEME_DEFAULT_GROW 1
+    /*0: Disable grow on press to reduce redraw overhead on resource-constrained targets*/
+    #define LV_THEME_DEFAULT_GROW 0
 
     /*Default transition time in [ms]*/
     #define LV_THEME_DEFAULT_TRANSITION_TIME 80
