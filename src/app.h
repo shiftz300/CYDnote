@@ -514,7 +514,7 @@ private:
         if (dot < 0) return false;
         String ext = path.substring(dot + 1);
         ext.toLowerCase();
-        return (ext == "jpg" || ext == "jpeg");
+        return (ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "bmp" || ext == "gif");
     }
 
     void showPrevImage() {

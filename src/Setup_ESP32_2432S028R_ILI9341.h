@@ -380,8 +380,8 @@
 // then uncomment the following line:
 #define USE_HSPI_PORT
 
-// Enable TFT_eSPI DMA path on classic ESP32 to improve flush throughput.
-#define ESP32_DMA
+// DMA disabled: causes screen corruption on this hardware.
+// #define ESP32_DMA
 
 // Comment out the following #define if "SPI Transactions" do not need to be
 // supported. When commented out the code size will be smaller and sketches will

@@ -415,7 +415,7 @@ static void tft_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * 
 
   tft.startWrite();
   tft.setAddrWindow(area->x1, area->y1, w, h);
-  tft.pushPixelsDMA((uint16_t *)px_map, len);
+  tft.pushColors((uint16_t *)px_map, len, true);
   tft.endWrite();
 
   lv_display_flush_ready(disp);
