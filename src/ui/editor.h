@@ -20,6 +20,7 @@ private:
     static constexpr uint8_t IME_CAND_PER_PAGE = 8;
     static constexpr uint16_t IME_CAND_MAX = 160;
     static constexpr size_t LARGE_DOC_PERF_THRESHOLD = 2 * 1024;
+    static constexpr int32_t TEXTAREA_SCROLL_ANIM_MS = 260;
     static constexpr int32_t CHUNK_NAV_BTN_SIZE = 24;
     static constexpr lv_opa_t CHUNK_NAV_BTN_BG_OPA = static_cast<lv_opa_t>((LV_OPA_COVER * 75) / 100);
     lv_obj_t* screen;
@@ -199,7 +200,7 @@ public:
         lv_obj_set_style_width(textarea, 1, LV_PART_CURSOR);
         lv_obj_add_flag(textarea, LV_OBJ_FLAG_SCROLL_ELASTIC);
         lv_obj_add_flag(textarea, LV_OBJ_FLAG_SCROLL_MOMENTUM);
-        lv_obj_set_style_anim_duration(textarea, 260, 0);
+        lv_obj_set_style_anim_duration(textarea, TEXTAREA_SCROLL_ANIM_MS, 0);
         int32_t editor_cursor_h = EDITOR_TEXT_SIZE_PX;
         if (editor_cursor_h < 2) editor_cursor_h = 2;
         lv_obj_set_style_height(textarea, editor_cursor_h, LV_PART_CURSOR);
@@ -365,12 +366,50 @@ public:
         refreshReadChunkButtons();
     }
 
-    void setReadChunkText(const String& content, bool anchor_end) {
+    void setReadChunkText(const String& content, bool has_prev, bool has_next, bool anchor_end) {
         if (!textarea) return;
+
+        // Suppress scroll animations during content swap so that the
+        // internal auto-scroll triggered by lv_textarea_set_text() does
+        // not conflict with the explicit scroll below.  This is the root
+        // cause of the visible "scroll-up jump" on every chunk switch.
+        lv_obj_set_style_anim_duration(textarea, 0, 0);
+
         applyLargeDocPerfMode(content.length());
+
+        // Batch-update navigation state before the final button refresh.
+        read_chunk_has_prev = has_prev;
+        read_chunk_has_next = has_next;
+
+        // Replace content.  LVGL internally moves the cursor to the end
+        // of the new text and auto-scrolls, but with anim_duration == 0
+        // the scroll is instantaneous and invisible.
         lv_textarea_set_text(textarea, content.c_str());
-        if (anchor_end) moveCursorAndViewToEnd();
-        else moveCursorAndViewToStart();
+
+        // Set cursor and record anchor for IME.
+        if (anchor_end) {
+            uint32_t len = (uint32_t)content.length();
+            lv_textarea_set_cursor_pos(textarea, (int32_t)len);
+            ime_cursor_anchor_pos = len;
+        } else {
+            lv_textarea_set_cursor_pos(textarea, 0);
+            ime_cursor_anchor_pos = 0;
+        }
+        ime_cursor_anchor_valid = true;
+
+        // Force layout so scroll metrics are accurate, then set the
+        // definitive scroll position in one shot.
+        lv_obj_update_layout(textarea);
+        if (anchor_end) {
+            int32_t bottom = lv_obj_get_scroll_bottom(textarea);
+            if (bottom > 0) lv_obj_scroll_by(textarea, 0, bottom, LV_ANIM_OFF);
+        } else {
+            lv_obj_scroll_to_y(textarea, 0, LV_ANIM_OFF);
+        }
+
+        // Restore normal scroll animation for user interaction.
+        lv_obj_set_style_anim_duration(textarea, TEXTAREA_SCROLL_ANIM_MS, 0);
+
         clearReadChunkFocus();
         refreshReadChunkButtons();
     }

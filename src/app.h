@@ -283,10 +283,12 @@ private:
         if (bytes_read == 0 && read_chunk_file_size > 0) return false;
 
         read_chunk_bytes = bytes_read;
+        bool has_prev = read_chunk_index > 0;
+        bool has_next = ((uint64_t)offset + (uint64_t)read_chunk_bytes) < read_chunk_file_size;
+
         editor.setTitle(current_filename);
         editor.setReadChunkMode(true);
-        editor.setReadChunkNavigationState(read_chunk_index > 0, ((uint64_t)offset + (uint64_t)read_chunk_bytes) < read_chunk_file_size);
-        editor.setReadChunkText(content, anchor_end);
+        editor.setReadChunkText(content, has_prev, has_next, anchor_end);
         return true;
     }
 
@@ -512,7 +514,7 @@ private:
         if (dot < 0) return false;
         String ext = path.substring(dot + 1);
         ext.toLowerCase();
-        return (ext == "jpg" || ext == "jpeg");
+        return (ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "bmp" || ext == "gif");
     }
 
     void showPrevImage() {
