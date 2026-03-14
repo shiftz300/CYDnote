@@ -169,18 +169,34 @@ public:
     }
 
     void handleSave() {
-        if (editor.isReadChunkMode()) {
-            Serial.println("Read chunk mode is read-only");
-            if (menu_manager.isVisible()) menu_manager.toggle();
-            return;
-        }
         if (current_filename.isEmpty()) {
             current_filename = "L:/note.txt";
         }
         String content = editor.getText();
         uint64_t old_size = 0;
         bool had_old = getVirtualFileSize(current_filename, old_size);
-        if (writeVirtualFile(current_filename, content)) {
+
+        bool save_success = false;
+        if (editor.isReadChunkMode()) {
+            // Need to save only the changed chunk
+            save_success = updateVirtualFileChunk(current_filename, read_chunk_offsets[read_chunk_index], read_chunk_bytes, content);
+            if (save_success) {
+                // Update chunk bytes if length changed
+                read_chunk_bytes = content.length();
+                // We should re-calculate file size after patching
+                uint64_t final_size = 0;
+                getVirtualFileSize(current_filename, final_size);
+                read_chunk_file_size = final_size;
+                // Truncate cached offsets after the current one, since they have shifted
+                if (read_chunk_index + 1 < read_chunk_offsets.size()) {
+                    read_chunk_offsets.resize(read_chunk_index + 1);
+                }
+            }
+        } else {
+            save_success = writeVirtualFile(current_filename, content);
+        }
+
+        if (save_success) {
             uint64_t new_size = 0;
             bool has_new = getVirtualFileSize(current_filename, new_size);
             if (!has_new) new_size = (uint64_t)content.length();
@@ -422,6 +438,83 @@ private:
         }
         if (drive == 'D' && sd_helper && sd_helper->isInitialized()) {
             return sd_helper->writeFile(path.c_str(), data);
+        }
+        return false;
+    }
+
+    bool updateVirtualFileChunk(const String& vpath, size_t chunk_offset, size_t chunk_old_len, const String& new_content) {
+        char drive = driveOf(vpath);
+        String path = innerPathOf(vpath);
+        String tmp_path = path + ".tmp";
+        
+        if (drive == 'L') {
+            File fin = LittleFS.open(path.c_str(), "r");
+            if (!fin) return false;
+            File fout = LittleFS.open(tmp_path.c_str(), "w");
+            if (!fout) { fin.close(); return false; }
+            
+            size_t copied = 0;
+            static constexpr size_t CHUNK = 512;
+            uint8_t buf[CHUNK];
+            while (copied < chunk_offset) {
+                size_t want = chunk_offset - copied;
+                if (want > CHUNK) want = CHUNK;
+                int n = fin.read(buf, want);
+                if (n <= 0) break;
+                fout.write(buf, n);
+                copied += n;
+            }
+            
+            fout.write((const uint8_t*)new_content.c_str(), new_content.length());
+            
+            if (fin.seek(chunk_offset + chunk_old_len, SeekSet)) {
+                while (true) {
+                    int n = fin.read(buf, CHUNK);
+                    if (n <= 0) break;
+                    fout.write(buf, n);
+                }
+            }
+            fin.close();
+            fout.close();
+            
+            LittleFS.remove(path.c_str());
+            LittleFS.rename(tmp_path.c_str(), path.c_str());
+            return true;
+        }
+        if (drive == 'D' && sd_helper && sd_helper->isInitialized()) {
+            FsFile fin = sd_helper->getFs().open(path.c_str(), O_RDONLY);
+            if (!fin.isOpen()) return false;
+            sd_helper->getFs().remove(tmp_path.c_str());
+            FsFile fout = sd_helper->getFs().open(tmp_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC);
+            if (!fout.isOpen()) { fin.close(); return false; }
+            
+            size_t copied = 0;
+            static constexpr size_t CHUNK = 512;
+            uint8_t buf[CHUNK];
+            while (copied < chunk_offset) {
+                size_t want = chunk_offset - copied;
+                if (want > CHUNK) want = CHUNK;
+                int n = fin.read(buf, want);
+                if (n <= 0) break;
+                fout.write(buf, n);
+                copied += n;
+            }
+            
+            fout.write((const uint8_t*)new_content.c_str(), new_content.length());
+            
+            fin.seek(chunk_offset + chunk_old_len);
+            while (true) {
+                int n = fin.read(buf, CHUNK);
+                if (n <= 0) break;
+                fout.write(buf, n);
+            }
+            
+            fin.close();
+            fout.close();
+            
+            sd_helper->getFs().remove(path.c_str());
+            sd_helper->getFs().rename(tmp_path.c_str(), path.c_str());
+            return true;
         }
         return false;
     }

@@ -7,542 +7,237 @@
   <style>
     :root {
       color-scheme: dark;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #111827;
-      color: #f8fafc;
-      --cyd-bg: #111827;
-      --cyd-panel: #182231;
-      --cyd-panel-soft: #0f172a;
-      --cyd-panel-strong: #1e293b;
-      --cyd-border: #2f3d52;
-      --cyd-primary: #5cb8ff;
-      --cyd-primary-soft: #a7dbff;
-      --cyd-success: #7dd3a5;
-      --cyd-warn: #f7c66a;
-      --cyd-error: #ff9ea2;
-      --cyd-text-soft: #cbd5e1;
-      --cyd-text-dim: #94a3b8;
+      font-family: system-ui, -apple-system, sans-serif;
+      --md-bg: #000000;
+      --md-surface: #101010;
+      --md-surface-h: #1E1E1E;
+      --md-surface-v: #2A2A2A;
+      --md-pri: #8ED1FF;
+      --md-on-pri: #001826;
+      --md-pri-c: #BFE6FF;
+      --md-on-pri-c: #001826;
+      --md-err: #FF9EA2;
+      --md-success: #9FF7B5;
+      --md-text: #FFFFFF;
+      --md-text-dim: #A0A0A0;
+      --md-border: #303030;
     }
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
     body {
-      margin: 0;
-      background: var(--cyd-bg);
-      color: #f8fafc;
+      margin: 0; background: var(--md-bg); color: var(--md-text);
+      display: flex; flex-direction: column; align-items: center; padding: 24px 16px;
     }
-    main {
-      max-width: 880px;
-      margin: 0 auto;
-      padding: 24px 16px 40px;
-    }
-    .card {
-      border: 1px solid var(--cyd-border);
+    main { width: 100%; max-width: 720px; }
+    .hero { text-align: center; margin-bottom: 24px; }
+    .hero h1 { margin: 0 0 8px; font-size: 1.8rem; color: var(--md-pri); font-weight: 500; }
+    .hero p { margin: 0; color: var(--md-text-dim); }
+    code { color: var(--md-pri-c); background: var(--md-surface-h); padding: 2px 6px; border-radius: 4px; }
+
+    .feature-tabs {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      background: var(--md-surface);
+      border: 1px solid var(--md-border);
       border-radius: 14px;
-      background: var(--cyd-panel-soft);
-      padding: 20px;
-    }
-    .hero {
+      padding: 8px;
       margin-bottom: 14px;
     }
-    h1 {
-      margin: 0 0 10px;
-      font-size: 1.85rem;
-    }
-    h2 {
-      margin: 0;
-      font-size: 1rem;
-    }
-    p,
-    li,
-    label,
-    small {
-      line-height: 1.55;
-      color: var(--cyd-text-soft);
-    }
-    p {
-      margin: 0;
-    }
-    code {
-      color: var(--cyd-primary-soft);
-    }
-    .flow {
-      display: grid;
-      gap: 14px;
-      position: relative;
-      padding-left: 18px;
-    }
-    .flow::before {
-      content: "";
-      position: absolute;
-      left: 6px;
-      top: 6px;
-      bottom: 6px;
-      width: 1px;
-      background: linear-gradient(to bottom, rgba(92, 184, 255, 0.35), rgba(92, 184, 255, 0.1));
-    }
-    .step {
-      border: 1px solid var(--cyd-border);
-      border-radius: 12px;
-      background: var(--cyd-panel);
-      padding: 16px;
-      position: relative;
-    }
-    .step::before {
-      content: "";
-      position: absolute;
-      left: -18px;
-      top: 30px;
-      width: 18px;
-      border-top: 1px solid rgba(92, 184, 255, 0.32);
-    }
-    .step-head {
-      display: flex;
-      gap: 12px;
-      align-items: flex-start;
-      margin-bottom: 14px;
-    }
-    .step-index {
-      flex: 0 0 auto;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 28px;
-      height: 28px;
-      border-radius: 999px;
-      background: rgba(92, 184, 255, 0.16);
-      color: var(--cyd-primary-soft);
-      font-weight: 700;
-      font-size: 0.95rem;
-    }
-    .step-copy {
-      display: grid;
-      gap: 4px;
-    }
-    .segmented,
-    .tool-grid,
-    .meta-grid,
-    .toolbar,
-    .actions {
-      display: grid;
-      gap: 10px;
-    }
-    .segmented {
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    }
-    .option {
-      display: block;
-      padding: 12px 14px;
+    .feature-tab {
+      appearance: none;
+      border: 1px solid transparent;
+      background: var(--md-surface-h);
+      color: var(--md-text-dim);
       border-radius: 10px;
-      border: 1px solid var(--cyd-border);
-      background: var(--cyd-panel-soft);
-      cursor: pointer;
-      transition: border-color 0.18s ease, background-color 0.18s ease;
-    }
-    .option input {
-      position: absolute;
-      opacity: 0;
-      pointer-events: none;
-    }
-    .option strong {
-      display: block;
-      margin-bottom: 3px;
-      color: #fff;
-      font-size: 0.97rem;
-    }
-    .option:has(input:checked) {
-      border-color: rgba(92, 184, 255, 0.6);
-      background: rgba(92, 184, 255, 0.12);
-    }
-    .option.disabled {
-      opacity: 0.56;
-      cursor: not-allowed;
-    }
-    .toolbar {
-      margin-top: 12px;
-    }
-    .toggle {
-      display: flex;
-      gap: 10px;
-      align-items: flex-start;
-      padding: 12px 14px;
-      border: 1px solid var(--cyd-border);
-      border-radius: 10px;
-      background: var(--cyd-panel-soft);
-      cursor: pointer;
-    }
-    .toggle input {
-      margin-top: 3px;
-      accent-color: var(--cyd-primary);
-    }
-    .toggle strong {
-      color: #fff;
-      font-size: 0.97rem;
-    }
-    .summary,
-    .release-note,
-    .status-text {
-      min-height: 1.4rem;
-      font-size: 0.95rem;
-    }
-    .summary {
-      padding: 12px 14px;
-      border-radius: 10px;
-      background: rgba(92, 184, 255, 0.1);
-      border: 1px solid rgba(92, 184, 255, 0.28);
-      color: #dbeafe;
-    }
-    .release-note {
-      color: var(--cyd-primary-soft);
-    }
-    .release-note.error,
-    .status-text.error {
-      color: var(--cyd-error);
-    }
-    .meta-grid {
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    }
-    .meta-item {
-      padding: 12px 14px;
-      border-radius: 10px;
-      border: 1px solid var(--cyd-border);
-      background: var(--cyd-panel-soft);
-    }
-    .meta-item span {
-      display: block;
-      margin-bottom: 4px;
-      color: var(--cyd-text-dim);
-      font-size: 0.85rem;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-    .meta-item strong {
-      color: #fff;
-      font-size: 0.98rem;
-      word-break: break-word;
-    }
-    .tool-grid {
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      margin-top: 12px;
-    }
-    .tool-card {
-      display: grid;
-      gap: 10px;
-      padding: 14px;
-      border-radius: 10px;
-      border: 1px solid var(--cyd-border);
-      background: var(--cyd-panel-soft);
-    }
-    .tool-card strong {
-      color: #fff;
-      font-size: 0.97rem;
-    }
-    .file-picker {
-      display: grid;
-      gap: 6px;
-      color: #fff;
+      padding: 10px 8px;
+      font-size: 0.9rem;
       font-weight: 600;
+      cursor: pointer;
     }
-    .file-picker input[type="file"] {
-      position: absolute;
-      opacity: 0;
-      pointer-events: none;
+    .feature-tab.active {
+      border-color: var(--md-pri);
+      background: rgba(142, 209, 255, 0.14);
+      color: var(--md-pri);
     }
-    .file-picker small {
-      color: var(--cyd-text-dim);
-      font-weight: 500;
+    
+    .card {
+      background: var(--md-surface); border-radius: 24px; padding: 24px;
+      margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+      border: 1px solid var(--md-surface-h);
     }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    h2 { margin: 0 0 16px; font-size: 1.25rem; font-weight: 500; display: flex; align-items: center; gap: 8px; }
+    .section-desc { font-size: 0.95rem; color: var(--md-text-dim); margin: -8px 0 16px; }
+    
+    .segmented { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .option {
+      flex: 1; min-width: 200px; padding: 16px; border-radius: 16px; background: var(--md-surface-h);
+      cursor: pointer; border: 2px solid transparent; transition: .2s;
+    }
+    .option input { display: none; }
+    .option span strong { display: block; margin-bottom: 4px; font-size: 1rem; color: var(--md-text); }
+    .option span { font-size: 0.85rem; color: var(--md-text-dim); }
+    .option:has(input:checked) { background: var(--md-pri-c); border-color: var(--md-pri); }
+    .option:has(input:checked) span, .option:has(input:checked) span strong { color: var(--md-on-pri-c); }
+    .option.disabled { opacity: 0.5; cursor: not-allowed; }
+    
+    .toolbar { display: flex; flex-direction: column; gap: 12px; }
+    .toggle {
+      display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 12px;
+      background: var(--md-surface-h); cursor: pointer; user-select: none; border: 1px solid transparent;
+    }
+    .toggle input { accent-color: var(--md-pri); width: 18px; height: 18px; margin: 0; }
+    .toggle strong { font-size: 0.95rem; }
+    
+    .summary, .release-note, .status-text { font-size: 0.9rem; margin-top: 4px; }
+    .summary { padding: 12px 16px; border-radius: 12px; background: rgba(92, 184, 255, 0.12); color: var(--md-pri); }
+    .release-note { color: var(--md-pri); }
+    .error { color: var(--md-err); }
+    
+    .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-top: 16px; }
+    .meta-item { padding: 12px; border-radius: 12px; background: var(--md-surface-h); }
+    .meta-item span { display: block; color: var(--md-text-dim); font-size: 0.75rem; text-transform: uppercase; margin-bottom: 4px;}
+    .meta-item strong { font-size: 0.9rem; word-break: break-word; }
+    
+    .file-picker { margin-top: 16px; position: relative; }
+    .file-picker input[type="file"] { position: absolute; opacity: 0; top: 0; left: 0; width: 100%; height: 100%; cursor: pointer;}
     .file-button {
-      appearance: none;
-      width: 100%;
-      border: 1px solid var(--cyd-primary-soft);
-      border-radius: 10px;
-      padding: 12px 16px;
-      font-size: 0.95rem;
-      font-weight: 700;
-      color: #fff;
-      background: var(--cyd-panel-strong);
-      cursor: pointer;
-      text-align: center;
-      transition: background-color 0.18s ease, border-color 0.18s ease;
+      display: flex; align-items: center; justify-content: center; width: 100%;
+      background: var(--md-surface-v); color: var(--md-text);
+      padding: 12px; border-radius: 12px; font-weight: 500; font-size: 0.95rem; pointer-events: none; transition: .2s;
     }
-    .file-button:hover {
-      background: rgba(92, 184, 255, 0.14);
-      border-color: var(--cyd-primary);
-    }
-    .actions {
-      margin-top: 2px;
-    }
+    .file-picker:hover .file-button { background: var(--md-surface-h); border-color: var(--md-pri); }
+    .file-picker small { display: block; margin-top: 8px; font-size: 0.8rem; color: var(--md-text-dim); }
+    
+    .actions { margin-top: 24px; }
     button {
-      appearance: none;
-      width: 100%;
-      border: 1px solid var(--cyd-primary-soft);
-      border-radius: 10px;
-      padding: 12px 16px;
-      font-size: 0.97rem;
-      font-weight: 700;
-      color: #fff;
-      background: var(--cyd-panel-strong);
-      cursor: pointer;
-      transition: background-color 0.18s ease, border-color 0.18s ease;
+      width: 100%; padding: 14px; border-radius: 999px; border: none; font-size: 1rem; font-weight: 500;
+      background: var(--md-pri); color: var(--md-on-pri); cursor: pointer; transition: .2s;
     }
-    button:hover {
-      background: rgba(92, 184, 255, 0.14);
-      border-color: var(--cyd-primary);
-    }
-    button:disabled {
-      cursor: not-allowed;
-      color: #94a3b8;
-      background: #111827;
-      border-color: #334155;
-    }
-    .progress {
-      width: 100%;
-      height: 10px;
-      accent-color: var(--cyd-primary);
-    }
-    .log-panel {
-      padding: 0;
-    }
+    button:hover { opacity: 0.9; }
+    button:disabled { background: var(--md-surface-h); color: var(--md-text-dim); cursor: not-allowed; }
+    
+    progress { width: 100%; height: 8px; border-radius: 4px; border: none; background: var(--md-surface-h); margin-top: 12px;}
+    progress::-webkit-progress-bar { background: var(--md-surface-h); border-radius: 4px; }
+    progress::-webkit-progress-value { background: var(--md-pri); border-radius: 4px; }
+    progress::-moz-progress-bar { background: var(--md-pri); border-radius: 4px; }
+    
     #log-window {
-      display: grid;
-      gap: 8px;
-      min-height: 180px;
-      max-height: 320px;
-      overflow: auto;
-      margin: 0;
-      padding: 10px 0;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 0.84rem;
-      line-height: 1.5;
+      background: #000; border-radius: 12px; padding: 12px; font-family: monospace; font-size: 0.85rem;
+      min-height: 200px; max-height: 300px; overflow-y: auto; color: var(--md-text-dim);
     }
-    .log-entry {
-      display: grid;
-      grid-template-columns: auto auto 1fr;
-      gap: 8px;
-      align-items: start;
-      padding: 2px 0;
-    }
-    .log-time {
-      color: #94a3b8;
-      white-space: nowrap;
-    }
-    .log-tag {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 62px;
-      padding: 1px 7px;
-      border-radius: 999px;
-      font-size: 0.72rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      white-space: nowrap;
-    }
-    .log-message {
-      color: #dbeafe;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-    .level-info .log-tag {
-      background: rgba(92, 184, 255, 0.16);
-      color: var(--cyd-primary-soft);
-    }
-    .level-success .log-tag {
-      background: rgba(125, 211, 165, 0.14);
-      color: var(--cyd-success);
-    }
-    .level-warn .log-tag {
-      background: rgba(247, 198, 106, 0.16);
-      color: var(--cyd-warn);
-    }
-    .level-error .log-tag {
-      background: rgba(255, 158, 162, 0.16);
-      color: var(--cyd-error);
-    }
-    .level-wait .log-tag {
-      background: rgba(148, 163, 184, 0.16);
-      color: #d1d5db;
-    }
-    .source-backup .log-message {
-      color: #bfdbfe;
-    }
-    .source-restore .log-message {
-      color: #c7f9cc;
-    }
-    .source-release .log-message {
-      color: #c4b5fd;
-    }
-    .notes {
-      margin: 16px 0 0;
-      padding-left: 18px;
-      color: var(--cyd-text-dim);
-    }
-    .hint {
-      margin-top: 12px;
-      font-size: 0.92rem;
-      color: var(--cyd-text-dim);
-    }
-    @media (max-width: 640px) {
-      main {
-        padding: 16px 12px 28px;
-      }
-      .card,
-      .step {
-        padding: 14px;
-      }
-      .log-entry {
-        grid-template-columns: 1fr;
-      }
-    }
+    .log-entry { display: flex; gap: 8px; margin-bottom: 4px; align-items: start; }
+    .log-time { color: #666; font-size: 0.75rem; white-space: nowrap; margin-top: 2px; }
+    .log-tag { border-radius: 4px; padding: 2px 6px; font-size: 0.72rem; font-weight: bold; background: #333; color: #aaa; white-space: nowrap; }
+    .level-info .log-tag { background: rgba(92, 184, 255, 0.2); color: var(--md-pri); }
+    .log-message { color: #ddd; word-break: break-word; }
+    .source-restore .log-message { color: var(--md-success); }
+    .source-release .log-message { color: var(--md-pri); }
+    
+    .notes { font-size: 0.85rem; color: var(--md-text-dim); padding-left: 20px; }
   </style>
 </head>
 <body>
   <main>
-    <div class="card">
-      <div class="hero">
-        <h1>CYDnote Web Flasher</h1>
-        <p>Installation flow for <code>ESP32-2432S028/ESP32-2432S028R (CYD)</code>. Use Chrome/Edge and connect by USB.</p>
-      </div>
-
-      <div class="flow">
-        <section class="step">
-          <div class="step-head">
-            <span class="step-index">1</span>
-            <div class="step-copy">
-              <h2>Install Firmware</h2>
-              <p>Select source, check route status, then flash.</p>
-            </div>
-          </div>
-
-          <div class="segmented mode">
-            <label class="option">
-              <input type="radio" name="flash-mode" value="preserve" checked>
-              <span>
-                <strong>Preserve Data</strong>
-                Updates firmware without overwriting LittleFS.
-              </span>
-            </label>
-            <label class="option">
-              <input type="radio" name="flash-mode" value="erase">
-              <span>
-                <strong>Full Restore</strong>
-                Writes <code>littlefs.bin</code> and clears local data.
-              </span>
-            </label>
-          </div>
-
-          <div class="toolbar">
-            <label class="toggle">
-              <input type="checkbox" id="ghproxy-toggle">
-              <span>
-                <strong>Use <code>gh-proxy</code> network</strong>
-              </span>
-            </label>
-            <div class="summary" id="mode-summary">Current mode: Preserve Data. LittleFS at <code>0x310000</code> will not be overwritten.</div>
-            <p class="release-note" id="release-note">Loading GitHub release assets…</p>
-            <label class="file-picker">
-              <span>Optional local release files</span>
-              <input id="local-release-files" type="file" accept=".bin,application/octet-stream" multiple>
-              <span class="file-button">Select Release Files</span>
-              <small>Upload <code>bootloader.bin</code>, <code>partitions.bin</code>, <code>firmware.bin</code> (and <code>littlefs.bin</code> for Full Restore) to flash even if proxy or release links fail. File names are matched case-insensitively.</small>
-            </label>
-            <div class="status-text" id="local-release-status">Using online release files by default.</div>
-          <div class="meta-grid">
-            <div class="meta-item">
-              <span>Build Time</span>
-              <strong id="build-date">Checking…</strong>
-            </div>
-            <div class="meta-item">
-              <span>API Route</span>
-              <strong id="api-proxy-status">Checking…</strong>
-            </div>
-            <div class="meta-item">
-              <span>Release Asset Route</span>
-              <strong id="asset-proxy-status">Idle</strong>
-            </div>
-          </div>
-
-          <div class="actions">
-            <button id="flash-button" type="button">Connect Device and Flash</button>
-          </div>
-          <progress class="progress" id="flash-progress" value="0" max="100" hidden></progress>
-          <div class="status-text" id="flash-status">Ready to flash.</div>
-          </div>
-        </section>
-
-        <section class="step">
-          <div class="step-head">
-            <span class="step-index">2</span>
-            <div class="step-copy">
-              <h2>Backup / Restore</h2>
-              <p>Optional data tools.</p>
-            </div>
-          </div>
-
-          <div class="segmented backup-mode">
-            <label class="option">
-              <input type="radio" name="backup-scope" value="littlefs" checked>
-              <span>
-                <strong>LittleFS Scope</strong>
-                User data at <code>0x310000</code>.
-              </span>
-            </label>
-            <label class="option">
-              <input type="radio" name="backup-scope" value="full">
-              <span>
-                <strong>Full Flash Scope</strong>
-                Whole 4MB flash.
-              </span>
-            </label>
-          </div>
-
-          <p class="hint" id="backup-summary">Current backup range: LittleFS.</p>
-
-          <div class="tool-grid">
-            <div class="tool-card">
-              <strong>Download Backup</strong>
-              <div class="actions">
-                <button id="backup-button" type="button">Download Backup</button>
-              </div>
-              <progress class="progress" id="backup-progress" value="0" max="100" hidden></progress>
-              <div class="status-text" id="backup-status">Ready to back up.</div>
-            </div>
-
-            <div class="tool-card">
-              <strong>Upload and Restore Backup</strong>
-              <label class="file-picker">
-                <span>Backup file</span>
-                <input id="restore-file" type="file" accept=".bin,application/octet-stream">
-                <span class="file-button">Select Backup File</span>
-              </label>
-              <progress class="progress" id="restore-progress" value="0" max="100" hidden></progress>
-              <div class="status-text" id="restore-status">Choose a backup file to restore.</div>
-            </div>
-          </div>
-        </section>
-
-        <section class="step">
-          <div class="step-head">
-            <span class="step-index">3</span>
-            <div class="step-copy">
-              <h2>Log</h2>
-            </div>
-          </div>
-
-          <div class="log-panel">
-            <div id="log-window" role="log" aria-live="polite"></div>
-          </div>
-        </section>
-      </div>
-
-      <ul class="notes">
-        <li>If auto-download mode fails, hold <code>BOOT</code>, press <code>RESET</code>, then retry.</li>
-        <li>Use Preserve Data only when the partition layout has not changed.</li>
-        <li>Backup files must match the selected scope.</li>
-      </ul>
+    <div class="hero">
+      <h1>CYDnote Web Flasher</h1>
+      <p>Seamless flashing flow for ESP32-2432S028/R (CYD).</p>
     </div>
+
+    <div class="feature-tabs" role="tablist" aria-label="Feature Switcher">
+      <button class="feature-tab active" type="button" data-tab-target="install" role="tab" aria-selected="true">flash</button>
+      <button class="feature-tab" type="button" data-tab-target="backup" role="tab" aria-selected="false">backup/restore</button>
+      <button class="feature-tab" type="button" data-tab-target="log" role="tab" aria-selected="false">console</button>
+    </div>
+
+    <div class="card tab-panel active" data-tab-panel="install">
+      <h2>1. Install Firmware</h2>
+      <p class="section-desc">Select how to update your CYD device.</p>
+      
+      <div class="segmented mode">
+        <label class="option">
+          <input type="radio" name="flash-mode" value="preserve" checked>
+          <span><strong>Preserve Data</strong>Update firmware, keep LittleFS.</span>
+        </label>
+        <label class="option">
+          <input type="radio" name="flash-mode" value="erase">
+          <span><strong>Full Restore</strong>Wipe all data & format filesystem.</span>
+        </label>
+      </div>
+
+      <div class="toolbar">
+        <label class="toggle">
+          <input type="checkbox" id="ghproxy-toggle">
+          <strong>Use gh-proxy acceleration network</strong>
+        </label>
+        <div class="summary" id="mode-summary">Current mode: Preserve Data. LittleFS at 0x310000 will not be overwritten.</div>
+        <p class="release-note" id="release-note">Loading GitHub release assets…</p>
+
+        <label class="file-picker">
+          <input id="local-release-files" type="file" accept=".bin,application/octet-stream" multiple>
+          <div class="file-button">Upload Alternative Local .bin Files</div>
+          <small>Upload bootloader.bin, partitions.bin, firmware.bin (and littlefs.bin for Full Restore) to flash if release links fail. Case-insensitive.</small>
+        </label>
+        <div class="status-text" id="local-release-status">Using online release files by default.</div>
+      </div>
+
+      <div class="meta-grid">
+        <div class="meta-item"><span>Build Time</span><strong id="build-date">Checking…</strong></div>
+        <div class="meta-item"><span>API Route</span><strong id="api-proxy-status">Checking…</strong></div>
+        <div class="meta-item"><span>Asset Route</span><strong id="asset-proxy-status">Idle</strong></div>
+      </div>
+
+      <div class="actions">
+        <button id="flash-button" type="button">Connect Device and Flash</button>
+      </div>
+      <progress class="progress" id="flash-progress" value="0" max="100" hidden></progress>
+      <div class="status-text" id="flash-status">Ready to flash.</div>
+    </div>
+
+    <div class="card tab-panel" data-tab-panel="backup">
+      <h2>2. Backup & Restore (Optional)</h2>
+      <p class="section-desc">Optional data clone tools before you flash.</p>
+      <div class="segmented backup-mode">
+        <label class="option">
+          <input type="radio" name="backup-scope" value="littlefs" checked>
+          <span><strong>Backup LittleFS</strong>Saves user data partition.</span>
+        </label>
+        <label class="option">
+          <input type="radio" name="backup-scope" value="full">
+          <span><strong>Backup Full Flash</strong>Entire 4MB raw clone.</span>
+        </label>
+      </div>
+      <p class="summary" id="backup-summary">Current backup range: LittleFS.</p>
+      
+      <div style="display:flex; gap: 12px; flex-wrap: wrap; margin-top: 12px;">
+        <div style="flex:1; min-width:200px; background: var(--md-surface-h); border-radius: 16px; padding: 16px;">
+          <h3 style="margin:0 0 12px; font-size:1rem; font-weight:500;">Download Backup</h3>
+          <button id="backup-button" type="button" style="background:var(--md-surface-v); border: 2px solid var(--md-pri); color:var(--md-pri);">Execute Backup</button>
+          <progress class="progress" id="backup-progress" value="0" max="100" hidden></progress>
+          <div class="status-text dim" id="backup-status" style="margin-top:8px; font-size: 0.8rem;">Ready to back up.</div>
+        </div>
+        <div style="flex:1; min-width:200px; background: var(--md-surface-h); border-radius: 16px; padding: 16px;">
+          <h3 style="margin:0 0 12px; font-size:1rem; font-weight:500;">Restore Backup</h3>
+          <label class="file-picker" style="margin-top:0;">
+            <input id="restore-file" type="file" accept=".bin,application/octet-stream">
+            <div class="file-button" style="padding:10px;">Select Backup File</div>
+          </label>
+          <progress class="progress" id="restore-progress" value="0" max="100" hidden></progress>
+          <div class="status-text dim" id="restore-status" style="margin-top:8px; font-size: 0.8rem;">Choose a backup file to restore.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card tab-panel" data-tab-panel="log">
+      <h2>Transaction Log</h2>
+      <div id="log-window" role="log" aria-live="polite"></div>
+    </div>
+    
+    <ul class="notes">
+      <li>If auto-download mode fails, firmly hold down <code>BOOT</code> button while connecting.</li>
+      <li>Do not use Preserve Data if migrating between functionally different partition layouts.</li>
+    </ul>
   </main>
 
   <script type="module">
@@ -626,6 +321,8 @@
     const restoreProgress = document.getElementById("restore-progress");
     const restoreStatus = document.getElementById("restore-status");
     const logWindow = document.getElementById("log-window");
+    const featureTabs = Array.from(document.querySelectorAll(".feature-tab"));
+    const featurePanels = Array.from(document.querySelectorAll(".tab-panel"));
 
     const serialSupported = typeof navigator !== "undefined" && "serial" in navigator;
     let currentManifest = null;
@@ -657,6 +354,21 @@
       const size = Number(sizeBytes || 0);
       return Number.isFinite(size) && size > 0 ? size : 0;
     }
+
+    function setActiveFeatureTab(target) {
+      featureTabs.forEach((tab) => {
+        const active = tab.dataset.tabTarget === target;
+        tab.classList.toggle("active", active);
+        tab.setAttribute("aria-selected", active ? "true" : "false");
+      });
+      featurePanels.forEach((panel) => {
+        panel.classList.toggle("active", panel.dataset.tabPanel === target);
+      });
+    }
+
+    featureTabs.forEach((tab) => {
+      tab.addEventListener("click", () => setActiveFeatureTab(tab.dataset.tabTarget));
+    });
 
     function getTotalFlashSize(files) {
       return files.reduce((total, file) => total + getFlashFileSize(file), 0);

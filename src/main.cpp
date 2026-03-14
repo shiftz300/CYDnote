@@ -483,7 +483,7 @@ void touchscreen_read(lv_indev_t * indev, lv_indev_data_t * data) {
 
 void setup() {
   String LVGL_Arduino = String("LVGL Library Version: ") + lv_version_major() + "." + lv_version_minor() + "." + lv_version_patch();
-  Serial.begin(115200);
+  Serial.begin(921600);
   Serial.println(LVGL_Arduino);
   
   // Start LVGL

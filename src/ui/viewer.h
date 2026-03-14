@@ -94,6 +94,10 @@ public:
             image_loading = false;
             return;
         }
+
+        lv_obj_clear_flag(hint_label, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(hint_label, "Loading image...");
+
         lv_image_header_t header;
         lv_result_t info_res = lv_image_decoder_get_info(vpath.c_str(), &header);
         if (info_res == LV_RESULT_OK) {
@@ -102,7 +106,7 @@ public:
         } else {
             lv_image_set_src(image, nullptr);
             lv_obj_clear_flag(hint_label, LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text(hint_label, "Unsupported image");
+            lv_label_set_text(hint_label, "Image too large or unsupported");
         }
         image_loading = false;
     }

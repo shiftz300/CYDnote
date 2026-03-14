@@ -328,7 +328,6 @@ public:
     }
 
     void toggleIME() {
-        if (read_chunk_mode) return;
         setIMEVisible(!ime_visible);
     }
 
@@ -547,11 +546,15 @@ private:
 
     void syncTextareaInteractionMode() {
         if (!textarea) return;
-        bool interactive = !read_chunk_mode && !large_doc_mode;
+        bool interactive = true;
         lv_textarea_set_cursor_click_pos(textarea, interactive);
-        lv_textarea_set_text_selection(textarea, interactive);
-        lv_obj_set_style_bg_opa(textarea, read_chunk_mode ? LV_OPA_TRANSP : LV_OPA_70, LV_PART_CURSOR);
-        if (read_chunk_mode) clearReadChunkFocus();
+        lv_textarea_set_text_selection(textarea, false);
+        if (interactive) {
+            lv_obj_add_flag(textarea, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+        } else {
+            lv_obj_clear_flag(textarea, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+        }
+        lv_obj_set_style_bg_opa(textarea, LV_OPA_70, LV_PART_CURSOR);
     }
 
     void clearReadChunkFocus() {
