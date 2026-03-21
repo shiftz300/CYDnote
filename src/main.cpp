@@ -73,24 +73,14 @@ static bool lv_sd_fs_registered = false;
 // Auto backlight (CDS/LDR -> TFT backlight PWM)
 static const uint8_t BL_MIN_PCT = 25;                // keep minimum readable brightness
 static const uint8_t BL_MAX_PCT = 85;                // keep headroom so change is visible
-static const uint32_t CDS_SAMPLE_MS = 90;            // slower sampling for dark stability
-static const float BL_SMOOTH_ALPHA = 0.22f;          // less jumpy
-static const float BL_FAST_ALPHA = 0.42f;            // faster response for large changes
-static const float BL_GAMMA = 1.8f;                  // bright-zone curve
+static const uint32_t CDS_SAMPLE_MS = 200;           // backlight polling interval
+static const float BL_SMOOTH_ALPHA = 0.24f;          // regular smoothing
+static const float BL_FAST_ALPHA = 0.45f;            // faster response for large changes
+static const float BL_GAMMA = 1.6f;                  // simple brightness curve
 static const bool CDS_INVERT = true;                 // light -> brighter
-static const float BL_MAX_STEP_PCT = 2.0f;           // max brightness step per sample
+static const float BL_MAX_STEP_PCT = 2.4f;           // max brightness step per sample
 static const float BL_FAST_MAX_STEP_PCT = 4.0f;      // max step when large ambient change
 static const float BL_FAST_DIFF_PCT = 8.0f;          // threshold for fast response mode
-static const float BL_DARK_ZONE = 0.35f;             // 0..35% ambient treated as dark zone
-static const float BL_DARK_GAIN = 0.12f;             // dark zone uses only 12% of total range
-static const float BL_ULTRA_DARK_ZONE = 0.10f;       // first 10%: extra compressed
-static const float BL_ULTRA_DARK_GAIN = 0.02f;       // first 10% uses only 2% of range
-static const float BL_DARK_HYSTERESIS_PCT = 1.0f;    // low-light anti-flicker deadband
-static const uint8_t BL_DARK_RISE_CONFIRM_SAMPLES = 7; // require sustained rise in dark
-static const float BL_DARK_MAX_STEP_PCT = 0.8f;      // smaller step in dark
-static const float BL_DARK_RISE_MAX_STEP_PCT = 0.25f; // very small rise step in dark to prevent flashes
-static const float BL_DARK_EXIT_MARGIN = 0.07f;       // must exceed dark zone by margin to unlock
-static const uint8_t BL_DARK_EXIT_CONFIRM_SAMPLES = 5; // sustained bright samples to exit dark lock
 static const int BL_MIN_SPAN_FOR_DYNAMIC = 64;       // avoid tiny span amplification
 
 static bool backlight_pwm_ready = false;
@@ -101,9 +91,6 @@ static int cds_obs_min = 4095;
 static int cds_obs_max = 0;
 static uint16_t cds_samples[5] = {0, 0, 0, 0, 0};
 static uint8_t cds_sample_idx = 0;
-static uint8_t dark_rise_confirm = 0;
-static uint8_t dark_exit_confirm = 0;
-static bool bl_dark_lock = true;
 
 static bool hasPsram() {
   return ESP.getPsramSize() > 0;
@@ -171,16 +158,7 @@ static uint16_t median5Push(uint16_t sample) {
 
 static inline float backlightTargetCurve(float t) {
   t = clamp01(t);
-  if (t <= BL_ULTRA_DARK_ZONE) {
-    return smoothstep01(invLerp01(t, 0.0f, BL_ULTRA_DARK_ZONE)) * BL_ULTRA_DARK_GAIN;
-  }
-  if (t <= BL_DARK_ZONE) {
-    return BL_ULTRA_DARK_GAIN +
-           smoothstep01(invLerp01(t, BL_ULTRA_DARK_ZONE, BL_DARK_ZONE)) *
-               (BL_DARK_GAIN - BL_ULTRA_DARK_GAIN);
-  }
-  return BL_DARK_GAIN +
-         powf(invLerp01(t, BL_DARK_ZONE, 1.0f), BL_GAMMA) * (1.0f - BL_DARK_GAIN);
+  return powf(t, BL_GAMMA);
 }
 
 static inline void backlightWritePct(uint8_t pct) {
@@ -242,50 +220,12 @@ static void backlightAutoUpdate() {
   float target_norm = backlightTargetCurve(t);
   float target_pct = lerpf((float)BL_MIN_PCT, (float)BL_MAX_PCT, target_norm);
 
-  // Dark-lock state machine:
-  // - Enter dark lock quickly when ambient goes dark.
-  // - Exit only after sustained brighter readings.
-  if (bl_dark_lock) {
-    if (t > (BL_DARK_ZONE + BL_DARK_EXIT_MARGIN)) {
-      if (dark_exit_confirm < BL_DARK_EXIT_CONFIRM_SAMPLES) dark_exit_confirm++;
-      if (dark_exit_confirm >= BL_DARK_EXIT_CONFIRM_SAMPLES) {
-        bl_dark_lock = false;
-        dark_exit_confirm = 0;
-      }
-    } else {
-      dark_exit_confirm = 0;
-    }
-  } else if (t <= BL_DARK_ZONE) {
-    bl_dark_lock = true;
-    dark_exit_confirm = 0;
-    dark_rise_confirm = 0;
-  }
-
-  // Low-light anti-flicker: keep dark environment stable.
-  if (bl_dark_lock) {
-    float diff = target_pct - bl_smoothed_pct;
-    if (fabsf(diff) < BL_DARK_HYSTERESIS_PCT) return;
-    // In dark: only brighten after several consecutive confirmations.
-    if (diff > 0.0f) {
-      if (dark_rise_confirm < BL_DARK_RISE_CONFIRM_SAMPLES) {
-        dark_rise_confirm++;
-        return;
-      }
-    } else {
-      dark_rise_confirm = 0;
-    }
-  } else {
-    dark_rise_confirm = 0;
-  }
   float diff = target_pct - bl_smoothed_pct;
   float abs_diff = fabsf(diff);
   float alpha = BL_SMOOTH_ALPHA;
   float max_step = BL_MAX_STEP_PCT;
 
-  if (bl_dark_lock) {
-    alpha = 0.10f;
-    max_step = (diff > 0.0f) ? BL_DARK_RISE_MAX_STEP_PCT : BL_DARK_MAX_STEP_PCT;
-  } else if (abs_diff >= BL_FAST_DIFF_PCT) {
+  if (abs_diff >= BL_FAST_DIFF_PCT) {
     // Large brightness changes respond faster.
     alpha = BL_FAST_ALPHA;
     max_step = BL_FAST_MAX_STEP_PCT;
@@ -483,7 +423,7 @@ void touchscreen_read(lv_indev_t * indev, lv_indev_data_t * data) {
 
 void setup() {
   String LVGL_Arduino = String("LVGL Library Version: ") + lv_version_major() + "." + lv_version_minor() + "." + lv_version_patch();
-  Serial.begin(921600);
+  Serial.begin(115200);
   Serial.println(LVGL_Arduino);
   
   // Start LVGL

@@ -22,7 +22,7 @@ private:
     static constexpr size_t LARGE_DOC_PERF_THRESHOLD = 2 * 1024;
     static constexpr int32_t TEXTAREA_SCROLL_ANIM_MS = 260;
     static constexpr int32_t CHUNK_NAV_BTN_SIZE = 24;
-    static constexpr lv_opa_t CHUNK_NAV_BTN_BG_OPA = static_cast<lv_opa_t>((LV_OPA_COVER * 75) / 100);
+    static constexpr lv_opa_t CHUNK_NAV_BTN_BG_OPA = static_cast<lv_opa_t>((LV_OPA_COVER * 80) / 100);
     lv_obj_t* screen;
     lv_obj_t* textarea;
     lv_obj_t* ime;
@@ -30,15 +30,15 @@ private:
     lv_obj_t* ime_container;
     lv_obj_t* ime_cand_proxy;
     lv_obj_t* ime_cand_src;
+    lv_obj_t* info_btn;
     lv_obj_t* ime_btn;
-    lv_obj_t* title_wrap;
-    lv_obj_t* title_label;
-    lv_obj_t* top_btn;
     lv_obj_t* save_btn;
     lv_obj_t* read_prev_btn;
     lv_obj_t* read_next_btn;
     lv_obj_t* save_popup;
     lv_timer_t* save_popup_timer;
+    lv_obj_t* info_popup;
+    lv_obj_t* resume_popup;
     char ime_cand_texts[IME_PROXY_CAND_MAX][8];
     const char* ime_cand_map[IME_PROXY_CAND_MAX + 1];
     uint8_t ime_cand_src_idx[IME_PROXY_CAND_MAX];
@@ -56,7 +56,12 @@ private:
     bool ime_font_acquired;
     uint32_t ime_cursor_anchor_pos;
     bool ime_cursor_anchor_valid;
+    size_t read_chunk_index_display;
+    size_t read_chunk_total_display;
+    size_t read_chunk_bytes_display;
+    uint64_t read_chunk_file_size_display;
     String current_file;
+    std::function<void(bool)> on_resume_choice_cb;
     std::function<void()> on_exit_cb;
     std::function<void()> on_save_cb;
     std::function<void()> on_read_prev_chunk_cb;
@@ -64,11 +69,12 @@ private:
 
 public:
     Editor() : screen(nullptr), textarea(nullptr), ime(nullptr),
-               keyboard(nullptr), ime_container(nullptr), ime_cand_proxy(nullptr), ime_cand_src(nullptr), ime_btn(nullptr), title_wrap(nullptr), title_label(nullptr), top_btn(nullptr), save_btn(nullptr), read_prev_btn(nullptr), read_next_btn(nullptr),
-               save_popup(nullptr), save_popup_timer(nullptr),
+               keyboard(nullptr), ime_container(nullptr), ime_cand_proxy(nullptr), ime_cand_src(nullptr), info_btn(nullptr), ime_btn(nullptr), save_btn(nullptr), read_prev_btn(nullptr), read_next_btn(nullptr),
+               save_popup(nullptr), save_popup_timer(nullptr), info_popup(nullptr), resume_popup(nullptr),
                ime_cand_syncing(false), ime_is_k9_mode(false), ime_cand_count(0), ime_cand_page(0),
                ime_visible(false), large_doc_mode(false), read_chunk_mode(false), read_chunk_has_prev(false), read_chunk_has_next(false), ime_font_acquired(false), ime_cursor_anchor_pos(0), ime_cursor_anchor_valid(false),
-               current_file(""), on_exit_cb(nullptr), on_save_cb(nullptr), on_read_prev_chunk_cb(nullptr), on_read_next_chunk_cb(nullptr) {
+               read_chunk_index_display(0), read_chunk_total_display(0), read_chunk_bytes_display(0), read_chunk_file_size_display(0),
+               current_file(""), on_resume_choice_cb(nullptr), on_exit_cb(nullptr), on_save_cb(nullptr), on_read_prev_chunk_cb(nullptr), on_read_next_chunk_cb(nullptr) {
         memset(ime_compose, 0, sizeof(ime_compose));
         memset(ime_cands, 0, sizeof(ime_cands));
         memset(ime_cand_texts, 0, sizeof(ime_cand_texts));
@@ -88,31 +94,13 @@ public:
         lv_obj_set_style_pad_row(screen, 0, 0);
         lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
-        lv_obj_t* toolbar = lv_obj_create(screen);
-        lv_obj_set_width(toolbar, lv_pct(100));
-        lv_obj_set_height(toolbar, 35);
-        lv_obj_set_flex_flow(toolbar, LV_FLEX_FLOW_ROW);
-        lv_obj_set_style_pad_all(toolbar, 2, 0);
-        lv_obj_set_style_pad_column(toolbar, 2, 0);
-        lv_obj_set_style_margin_all(toolbar, 0, 0);
-        lv_obj_set_style_radius(toolbar, 4, 0);
-        lv_obj_set_style_clip_corner(toolbar, true, 0);
-        lv_obj_set_style_bg_color(toolbar, lv_color_hex(0x101010), 0);
-        lv_obj_set_style_border_color(toolbar, lv_color_hex(0x303030), 0);
-        lv_obj_clear_flag(toolbar, LV_OBJ_FLAG_SCROLLABLE);
-
-        lv_obj_t* left_wrap = lv_obj_create(toolbar);
-        lv_obj_set_size(left_wrap, LV_SIZE_CONTENT, lv_pct(100));
-        lv_obj_set_flex_flow(left_wrap, LV_FLEX_FLOW_ROW);
-        lv_obj_set_style_bg_opa(left_wrap, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(left_wrap, 0, 0);
-        lv_obj_set_style_pad_all(left_wrap, 0, 0);
-        lv_obj_set_style_pad_column(left_wrap, 0, 0);
-        lv_obj_clear_flag(left_wrap, LV_OBJ_FLAG_SCROLLABLE);
-
-        lv_obj_t* exit_btn = lv_btn_create(left_wrap);
+        lv_obj_t* exit_btn = lv_btn_create(screen);
+        lv_obj_add_flag(exit_btn, LV_OBJ_FLAG_FLOATING);
+        lv_obj_add_flag(exit_btn, LV_OBJ_FLAG_IGNORE_LAYOUT);
         lv_obj_set_size(exit_btn, 28, 26);
         styleActionButton(exit_btn);
+        lv_obj_set_style_bg_opa(exit_btn, CHUNK_NAV_BTN_BG_OPA, LV_STATE_DEFAULT);
+        lv_obj_align(exit_btn, LV_ALIGN_TOP_LEFT, 4, 4);
         lv_obj_add_event_cb(exit_btn, exit_btn_event_cb, LV_EVENT_CLICKED, this);
         lv_obj_t* exit_label = lv_label_create(exit_btn);
         lv_label_set_text(exit_label, LV_SYMBOL_LEFT);
@@ -120,50 +108,27 @@ public:
         lv_obj_set_style_text_color(exit_label, lv_color_hex(0xFFFFFF), 0);
         lv_obj_center(exit_label);
 
-        title_wrap = lv_obj_create(toolbar);
-        lv_obj_set_flex_grow(title_wrap, 1);
-        lv_obj_set_height(title_wrap, lv_pct(100));
-        lv_obj_set_flex_flow(title_wrap, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(title_wrap, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_bg_opa(title_wrap, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(title_wrap, 0, 0);
-        lv_obj_set_style_pad_all(title_wrap, 0, 0);
-        lv_obj_set_scroll_dir(title_wrap, LV_DIR_HOR);
-        lv_obj_set_scrollbar_mode(title_wrap, LV_SCROLLBAR_MODE_OFF);
-        lv_obj_add_flag(title_wrap, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_add_flag(title_wrap, LV_OBJ_FLAG_SCROLL_MOMENTUM);
-        lv_obj_add_flag(title_wrap, LV_OBJ_FLAG_SCROLL_ELASTIC);
+        ime_btn = lv_btn_create(screen);
+        lv_obj_add_flag(ime_btn, LV_OBJ_FLAG_FLOATING);
+        lv_obj_add_flag(ime_btn, LV_OBJ_FLAG_IGNORE_LAYOUT);
+        lv_obj_set_size(ime_btn, 28, 26);
+        styleActionButton(ime_btn);
+        lv_obj_set_style_bg_opa(ime_btn, CHUNK_NAV_BTN_BG_OPA, LV_STATE_DEFAULT);
+        lv_obj_align(ime_btn, LV_ALIGN_TOP_RIGHT, -4, 4);
+        lv_obj_add_event_cb(ime_btn, ime_btn_event_cb, LV_EVENT_CLICKED, this);
+        lv_obj_t* ime_label = lv_label_create(ime_btn);
+        lv_label_set_text(ime_label, LV_SYMBOL_KEYBOARD);
+        lv_obj_set_style_text_font(ime_label, FontManager::iconFont(), 0);
+        lv_obj_set_style_text_color(ime_label, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_center(ime_label);
 
-        title_label = lv_label_create(title_wrap);
-        lv_label_set_text(title_label, "Editor");
-        lv_obj_set_style_text_color(title_label, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_set_style_text_font(title_label, FontManager::textFont(), 0);
-        lv_label_set_long_mode(title_label, LV_LABEL_LONG_CLIP);
-        lv_obj_set_width(title_label, LV_SIZE_CONTENT);
-        lv_obj_set_style_text_align(title_label, LV_TEXT_ALIGN_LEFT, 0);
-
-        lv_obj_t* right_wrap = lv_obj_create(toolbar);
-        lv_obj_set_size(right_wrap, LV_SIZE_CONTENT, lv_pct(100));
-        lv_obj_set_flex_flow(right_wrap, LV_FLEX_FLOW_ROW);
-        lv_obj_set_style_bg_opa(right_wrap, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(right_wrap, 0, 0);
-        lv_obj_set_style_pad_all(right_wrap, 0, 0);
-        lv_obj_set_style_pad_column(right_wrap, 2, 0);
-        lv_obj_clear_flag(right_wrap, LV_OBJ_FLAG_SCROLLABLE);
-
-        top_btn = lv_btn_create(right_wrap);
-        lv_obj_set_size(top_btn, 28, 26);
-        styleActionButton(top_btn);
-        lv_obj_add_event_cb(top_btn, top_btn_event_cb, LV_EVENT_CLICKED, this);
-        lv_obj_t* top_label = lv_label_create(top_btn);
-        lv_label_set_text(top_label, LV_SYMBOL_UP);
-        lv_obj_set_style_text_font(top_label, FontManager::iconFont(), 0);
-        lv_obj_set_style_text_color(top_label, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_center(top_label);
-
-        save_btn = lv_btn_create(right_wrap);
+        save_btn = lv_btn_create(screen);
+        lv_obj_add_flag(save_btn, LV_OBJ_FLAG_FLOATING);
+        lv_obj_add_flag(save_btn, LV_OBJ_FLAG_IGNORE_LAYOUT);
         lv_obj_set_size(save_btn, 28, 26);
         styleActionButton(save_btn);
+        lv_obj_set_style_bg_opa(save_btn, CHUNK_NAV_BTN_BG_OPA, LV_STATE_DEFAULT);
+        lv_obj_align_to(save_btn, ime_btn, LV_ALIGN_OUT_LEFT_MID, -4, 0);
         lv_obj_add_event_cb(save_btn, save_btn_event_cb, LV_EVENT_CLICKED, this);
         lv_obj_t* save_label = lv_label_create(save_btn);
         lv_label_set_text(save_label, LV_SYMBOL_SAVE);
@@ -171,15 +136,19 @@ public:
         lv_obj_set_style_text_color(save_label, lv_color_hex(0xFFFFFF), 0);
         lv_obj_center(save_label);
 
-        ime_btn = lv_btn_create(right_wrap);
-        lv_obj_set_size(ime_btn, 28, 26);
-        styleActionButton(ime_btn);
-        lv_obj_add_event_cb(ime_btn, ime_btn_event_cb, LV_EVENT_CLICKED, this);
-        lv_obj_t* ime_label = lv_label_create(ime_btn);
-        lv_label_set_text(ime_label, LV_SYMBOL_KEYBOARD);
-        lv_obj_set_style_text_font(ime_label, FontManager::iconFont(), 0);
-        lv_obj_set_style_text_color(ime_label, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_center(ime_label);
+        info_btn = lv_btn_create(screen);
+        lv_obj_add_flag(info_btn, LV_OBJ_FLAG_FLOATING);
+        lv_obj_add_flag(info_btn, LV_OBJ_FLAG_IGNORE_LAYOUT);
+        lv_obj_set_size(info_btn, 28, 26);
+        styleActionButton(info_btn);
+        lv_obj_set_style_bg_opa(info_btn, CHUNK_NAV_BTN_BG_OPA, LV_STATE_DEFAULT);
+        lv_obj_align_to(info_btn, save_btn, LV_ALIGN_OUT_LEFT_MID, -4, 0);
+        lv_obj_add_event_cb(info_btn, info_btn_event_cb, LV_EVENT_CLICKED, this);
+        lv_obj_t* info_label = lv_label_create(info_btn);
+        lv_label_set_text(info_label, "i");
+        lv_obj_set_style_text_font(info_label, FontManager::iconFont(), 0);
+        lv_obj_set_style_text_color(info_label, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_center(info_label);
 
         textarea = lv_textarea_create(screen);
         lv_obj_set_width(textarea, lv_pct(100));
@@ -209,7 +178,7 @@ public:
         ime_cursor_anchor_pos = lv_textarea_get_cursor_pos(textarea);
         ime_cursor_anchor_valid = true;
 
-        read_prev_btn = createReadChunkNavButton(LV_ALIGN_TOP_RIGHT, -6, 42, LV_SYMBOL_LEFT, read_prev_btn_event_cb);
+        read_prev_btn = createReadChunkNavButton(LV_ALIGN_BOTTOM_LEFT, 6, -6, LV_SYMBOL_LEFT, read_prev_btn_event_cb);
         read_next_btn = createReadChunkNavButton(LV_ALIGN_BOTTOM_RIGHT, -6, -6, LV_SYMBOL_RIGHT, read_next_btn_event_cb);
 
         ime_container = lv_obj_create(screen);
@@ -291,11 +260,18 @@ public:
         }
         applyIMEFonts();
 
+        lv_obj_move_foreground(exit_btn);
+        lv_obj_move_foreground(info_btn);
+        lv_obj_move_foreground(save_btn);
+        lv_obj_move_foreground(ime_btn);
+
         lv_obj_add_flag(ime_container, LV_OBJ_FLAG_HIDDEN);
         ime_visible = false;
     }
 
     void destroy() {
+        closeResumePopup();
+        closeInfoPopup();
         closeSavePopup();
         if (ime_font_acquired) {
             FontManager::releaseIMEFont();
@@ -310,13 +286,13 @@ public:
             ime_container = nullptr;
             ime_cand_proxy = nullptr;
             ime_cand_src = nullptr;
+            info_btn = nullptr;
             ime_btn = nullptr;
-            title_wrap = nullptr;
-            title_label = nullptr;
-            top_btn = nullptr;
             save_btn = nullptr;
             read_prev_btn = nullptr;
             read_next_btn = nullptr;
+            info_popup = nullptr;
+            resume_popup = nullptr;
         }
     }
 
@@ -365,6 +341,13 @@ public:
         refreshReadChunkButtons();
     }
 
+    void setReadChunkDisplayInfo(size_t chunk_index, size_t chunk_total, size_t chunk_bytes, uint64_t file_size) {
+        read_chunk_index_display = chunk_index;
+        read_chunk_total_display = chunk_total;
+        read_chunk_bytes_display = chunk_bytes;
+        read_chunk_file_size_display = file_size;
+    }
+
     void setReadChunkText(const String& content, bool has_prev, bool has_next, bool anchor_end) {
         if (!textarea) return;
 
@@ -400,8 +383,7 @@ public:
         // definitive scroll position in one shot.
         lv_obj_update_layout(textarea);
         if (anchor_end) {
-            int32_t bottom = lv_obj_get_scroll_bottom(textarea);
-            if (bottom > 0) lv_obj_scroll_by(textarea, 0, bottom, LV_ANIM_OFF);
+            lv_textarea_set_cursor_pos(textarea, LV_TEXTAREA_CURSOR_LAST);
         } else {
             lv_obj_scroll_to_y(textarea, 0, LV_ANIM_OFF);
         }
@@ -418,18 +400,89 @@ public:
         return "";
     }
 
+    uint32_t getCursorPos() const {
+        if (!textarea) return 0;
+        int32_t pos = lv_textarea_get_cursor_pos(textarea);
+        return pos < 0 ? 0U : (uint32_t)pos;
+    }
+
+    void setCursorPos(uint32_t pos) {
+        if (!textarea) return;
+        const char* txt = lv_textarea_get_text(textarea);
+        uint32_t len = txt ? (uint32_t)strlen(txt) : 0;
+        if (pos > len) pos = len;
+        lv_textarea_set_cursor_pos(textarea, (int32_t)pos);
+        ime_cursor_anchor_pos = pos;
+        ime_cursor_anchor_valid = true;
+    }
+
     void setTitle(const String& filename) {
         current_file = filename;
-        if (!title_label) return;
-        int idx = filename.lastIndexOf('/');
-        String name = (idx >= 0 && idx < (int)filename.length() - 1) ? filename.substring(idx + 1) : filename;
-        if (name.length() == 0) name = "Editor";
-        lv_label_set_text(title_label, name.c_str());
-        if (title_wrap) lv_obj_scroll_to_x(title_wrap, 0, LV_ANIM_OFF);
     }
 
     String getTitle() const {
         return current_file;
+    }
+
+    void showResumeProgressPrompt(const String& details, std::function<void(bool)> on_choice) {
+        if (!screen) return;
+        closeResumePopup();
+        on_resume_choice_cb = on_choice;
+
+        resume_popup = lv_obj_create(screen);
+        lv_obj_add_flag(resume_popup, LV_OBJ_FLAG_FLOATING);
+        lv_obj_add_flag(resume_popup, LV_OBJ_FLAG_IGNORE_LAYOUT);
+        lv_obj_set_size(resume_popup, 214, LV_SIZE_CONTENT);
+        lv_obj_align(resume_popup, LV_ALIGN_CENTER, 0, -12);
+        lv_obj_set_style_bg_color(resume_popup, lv_color_hex(0x0E0E0E), 0);
+        lv_obj_set_style_border_color(resume_popup, lv_color_hex(0x4A4A4A), 0);
+        lv_obj_set_style_border_width(resume_popup, 1, 0);
+        lv_obj_set_style_radius(resume_popup, 6, 0);
+        lv_obj_set_style_pad_all(resume_popup, 6, 0);
+        lv_obj_set_style_pad_row(resume_popup, 3, 0);
+        lv_obj_set_flex_flow(resume_popup, LV_FLEX_FLOW_COLUMN);
+        lv_obj_clear_flag(resume_popup, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t* title = lv_label_create(resume_popup);
+        lv_label_set_text(title, "Resume reading?");
+        lv_obj_set_style_text_color(title, lv_color_hex(0xBFDFFF), 0);
+        lv_obj_set_style_text_font(title, FontManager::iconFont(), 0);
+
+        lv_obj_t* body = lv_label_create(resume_popup);
+        lv_label_set_text(body, details.c_str());
+        lv_label_set_long_mode(body, LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(body, lv_pct(100));
+        lv_obj_set_style_text_color(body, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_set_style_text_font(body, FontManager::textFont(), 0);
+
+        lv_obj_t* row = lv_obj_create(resume_popup);
+        lv_obj_remove_style_all(row);
+        lv_obj_set_width(row, lv_pct(100));
+        lv_obj_set_height(row, 32);
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_column(row, 6, 0);
+        lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t* no_btn = lv_btn_create(row);
+        lv_obj_set_size(no_btn, 58, 26);
+        styleActionButton(no_btn);
+        lv_obj_add_event_cb(no_btn, resume_no_event_cb, LV_EVENT_CLICKED, this);
+        lv_obj_t* no_lbl = lv_label_create(no_btn);
+        lv_label_set_text(no_lbl, "No");
+        lv_obj_set_style_text_font(no_lbl, FontManager::iconFont(), 0);
+        lv_obj_center(no_lbl);
+
+        lv_obj_t* yes_btn = lv_btn_create(row);
+        lv_obj_set_size(yes_btn, 58, 26);
+        styleActionButton(yes_btn);
+        lv_obj_add_event_cb(yes_btn, resume_yes_event_cb, LV_EVENT_CLICKED, this);
+        lv_obj_t* yes_lbl = lv_label_create(yes_btn);
+        lv_label_set_text(yes_lbl, "Yes");
+        lv_obj_set_style_text_font(yes_lbl, FontManager::iconFont(), 0);
+        lv_obj_center(yes_lbl);
+
+        lv_obj_move_foreground(resume_popup);
     }
 
     void showSaveSuccessPopup(const String& filename, const String& from_size, const String& to_size) {
@@ -474,6 +527,109 @@ public:
     }
 
 private:
+    String formatBytesCompact(uint64_t bytes) const {
+        const uint64_t KB = 1024ULL;
+        const uint64_t MB = 1024ULL * 1024ULL;
+        const uint64_t GB = 1024ULL * 1024ULL * 1024ULL;
+        char buf[32];
+        if (bytes >= GB) {
+            uint64_t t = (bytes * 10ULL) / GB;
+            lv_snprintf(buf, sizeof(buf), "%u.%u GB", (unsigned)(t / 10ULL), (unsigned)(t % 10ULL));
+        } else if (bytes >= MB) {
+            uint64_t t = (bytes * 10ULL) / MB;
+            lv_snprintf(buf, sizeof(buf), "%u.%u MB", (unsigned)(t / 10ULL), (unsigned)(t % 10ULL));
+        } else if (bytes >= KB) {
+            uint64_t t = (bytes * 10ULL) / KB;
+            lv_snprintf(buf, sizeof(buf), "%u.%u KB", (unsigned)(t / 10ULL), (unsigned)(t % 10ULL));
+        } else {
+            lv_snprintf(buf, sizeof(buf), "%u B", (unsigned)bytes);
+        }
+        return String(buf);
+    }
+
+    void closeInfoPopup() {
+        if (info_popup) {
+            lv_obj_del(info_popup);
+            info_popup = nullptr;
+        }
+    }
+
+    void closeResumePopup() {
+        if (resume_popup) {
+            lv_obj_del(resume_popup);
+            resume_popup = nullptr;
+        }
+        on_resume_choice_cb = nullptr;
+    }
+
+    void showInfoPopup() {
+        if (!screen) return;
+        closeInfoPopup();
+        info_popup = lv_obj_create(screen);
+        lv_obj_add_flag(info_popup, LV_OBJ_FLAG_FLOATING);
+        lv_obj_add_flag(info_popup, LV_OBJ_FLAG_IGNORE_LAYOUT);
+        lv_obj_set_size(info_popup, 206, LV_SIZE_CONTENT);
+        lv_obj_align(info_popup, LV_ALIGN_TOP_MID, 0, 36);
+        lv_obj_set_style_bg_color(info_popup, lv_color_hex(0x0E0E0E), 0);
+        lv_obj_set_style_border_color(info_popup, lv_color_hex(0x4A4A4A), 0);
+        lv_obj_set_style_border_width(info_popup, 1, 0);
+        lv_obj_set_style_radius(info_popup, 6, 0);
+        lv_obj_set_style_pad_all(info_popup, 6, 0);
+        lv_obj_set_style_pad_row(info_popup, 2, 0);
+        lv_obj_set_flex_flow(info_popup, LV_FLEX_FLOW_COLUMN);
+        lv_obj_clear_flag(info_popup, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t* title = lv_label_create(info_popup);
+        lv_label_set_text(title, "Info");
+        lv_obj_set_style_text_color(title, lv_color_hex(0xBFDFFF), 0);
+        lv_obj_set_style_text_font(title, FontManager::iconFont(), 0);
+
+        int idx = current_file.lastIndexOf('/');
+        String file_name = (idx >= 0 && idx < (int)current_file.length() - 1) ? current_file.substring(idx + 1) : current_file;
+        if (file_name.length() == 0) file_name = "(untitled)";
+
+        String details;
+        details += "File: ";
+        details += file_name;
+        details += "\n";
+        if (read_chunk_mode) {
+            details += "Chunk: ";
+            details += String((unsigned long)(read_chunk_index_display + 1));
+            details += "/";
+            details += String((unsigned long)(read_chunk_total_display > 0 ? read_chunk_total_display : 1));
+            details += "\n";
+            details += "File size: ";
+            details += formatBytesCompact(read_chunk_file_size_display);
+        } else {
+            details += "File size: ";
+            details += formatBytesCompact(read_chunk_file_size_display);
+        }
+
+        lv_obj_t* body = lv_label_create(info_popup);
+        lv_label_set_text(body, details.c_str());
+        lv_label_set_long_mode(body, LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(body, lv_pct(100));
+        lv_obj_set_style_text_color(body, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_set_style_text_font(body, FontManager::textFont(), 0);
+
+        lv_obj_t* row = lv_obj_create(info_popup);
+        lv_obj_remove_style_all(row);
+        lv_obj_set_width(row, lv_pct(100));
+        lv_obj_set_height(row, 30);
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t* ok_btn = lv_btn_create(row);
+        lv_obj_set_size(ok_btn, 56, 26);
+        styleActionButton(ok_btn);
+        lv_obj_add_event_cb(ok_btn, info_popup_ok_event_cb, LV_EVENT_CLICKED, this);
+        lv_obj_t* ok_lbl = lv_label_create(ok_btn);
+        lv_label_set_text(ok_lbl, "OK");
+        lv_obj_set_style_text_font(ok_lbl, FontManager::iconFont(), 0);
+        lv_obj_center(ok_lbl);
+    }
+
     void applyLargeDocPerfMode(size_t content_len) {
         if (!textarea) return;
         bool want_large_mode = content_len >= LARGE_DOC_PERF_THRESHOLD;
@@ -500,6 +656,28 @@ private:
         Editor* ed = (Editor*)lv_timer_get_user_data(t);
         if (!ed) return;
         ed->closeSavePopup();
+    }
+
+    static void info_popup_ok_event_cb(lv_event_t* e) {
+        Editor* ed = (Editor*)lv_event_get_user_data(e);
+        if (!ed) return;
+        ed->closeInfoPopup();
+    }
+
+    static void resume_no_event_cb(lv_event_t* e) {
+        Editor* ed = (Editor*)lv_event_get_user_data(e);
+        if (!ed) return;
+        std::function<void(bool)> cb = ed->on_resume_choice_cb;
+        ed->closeResumePopup();
+        if (cb) cb(false);
+    }
+
+    static void resume_yes_event_cb(lv_event_t* e) {
+        Editor* ed = (Editor*)lv_event_get_user_data(e);
+        if (!ed) return;
+        std::function<void(bool)> cb = ed->on_resume_choice_cb;
+        ed->closeResumePopup();
+        if (cb) cb(true);
     }
 
     void styleActionButton(lv_obj_t* btn) {
@@ -636,6 +814,12 @@ private:
         ed->toggleIME();
     }
 
+    static void info_btn_event_cb(lv_event_t* e) {
+        Editor* ed = (Editor*)lv_event_get_user_data(e);
+        if (!ed) return;
+        ed->showInfoPopup();
+    }
+
     static void textarea_cursor_anchor_event_cb(lv_event_t* e) {
         Editor* ed = (Editor*)lv_event_get_user_data(e);
         if (!ed || !ed->textarea) return;
@@ -658,12 +842,6 @@ private:
         if (ed->on_save_cb) {
             ed->on_save_cb();
         }
-    }
-
-    static void top_btn_event_cb(lv_event_t* e) {
-        Editor* ed = (Editor*)lv_event_get_user_data(e);
-        if (!ed) return;
-        ed->moveCursorAndViewToStart();
     }
 
     static void read_prev_btn_event_cb(lv_event_t* e) {

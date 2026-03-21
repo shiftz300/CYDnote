@@ -26,6 +26,9 @@ private:
     static constexpr int32_t IME_TOTAL_H_FALLBACK = IME_CANDIDATE_H + IME_KEYBOARD_H;
     static constexpr size_t COPY_IO_CHUNK = 24576;
     static constexpr uint8_t COPY_CHUNKS_PER_TICK = 12;
+    static constexpr uint32_t FS_USAGE_REFRESH_MS_LFS = 2000;
+    static constexpr uint32_t FS_USAGE_REFRESH_MS_SD_EXFAT = 3000;
+    static constexpr uint32_t FS_USAGE_REFRESH_MS_SD_FAT32 = 12000;
     enum FsWorkerJobType {
         FS_WORK_NONE = 0,
         FS_WORK_COPY_DIR = 1,
@@ -57,6 +60,18 @@ private:
     struct FileListItem {
         String name;
         bool is_dir;
+    };
+
+    struct EntryInfoData {
+        bool is_dir;
+        uint32_t file_count;
+        uint64_t file_size;
+        bool has_created_time;
+        uint16_t created_date;
+        uint16_t created_time;
+        bool has_modified_time;
+        uint16_t modified_date;
+        uint16_t modified_time;
     };
 
     lv_obj_t* screen;
@@ -153,6 +168,8 @@ private:
     uint32_t fs_usage_last_ms;
     int fs_usage_last_pct;
     bool fs_usage_last_valid;
+    bool fs_usage_force_refresh;
+    char fs_usage_last_drive;
     bool list_suspended_for_dialog;
     bool reset_scroll_pending;
     uint32_t dialog_ime_cursor_anchor_pos;
@@ -168,7 +185,7 @@ public:
           on_open_cb(nullptr), on_share_ap_toggle_cb(nullptr), on_share_ap_running_cb(nullptr), on_share_ap_status_cb(nullptr),
           sd_ready(false), remove_mode(false), copy_pick_mode(false), move_pick_mode(false), active_drive('L'),
           current_path("/"), selected_vpath(""), copied_vpath(""), moved_vpath(""), pending_open_vpath(""), new_as_dir(false), copy_cancel_requested(false), copy_in_progress(false), delete_in_progress(false), copy_dir_worker_mode(false), fs_job_in_progress(false), copy_started_ms(0), fs_worker_task(nullptr), fs_worker_job(FS_WORK_NONE), fs_worker_busy(false), fs_worker_done(false), fs_worker_ok(false), fs_worker_delete_done(0), fs_worker_delete_removed(0), fs_worker_delete_total(0), fs_worker_delete_force(false), fs_worker_src_vpath(""), fs_worker_dst_vpath(""), fs_worker_arg1(""), fs_worker_arg2(""), fs_worker_scan_items(), fs_worker_scan_vpath(""), scan_in_progress(false), scan_result_ready(false), scan_result_ok(false), dialog_mode(DIALOG_NONE),
-          fs_usage_last_ms(0), fs_usage_last_pct(0), fs_usage_last_valid(false), list_suspended_for_dialog(false), reset_scroll_pending(true),
+            fs_usage_last_ms(0), fs_usage_last_pct(0), fs_usage_last_valid(false), fs_usage_force_refresh(true), fs_usage_last_drive('\0'), list_suspended_for_dialog(false), reset_scroll_pending(true),
           dialog_ime_cursor_anchor_pos(0), dialog_ime_cursor_anchor_valid(false) {
     }
 
@@ -192,6 +209,9 @@ public:
         dialog_mode = DIALOG_NONE;
         list_suspended_for_dialog = false;
         reset_scroll_pending = true;
+        fs_usage_last_valid = false;
+        fs_usage_force_refresh = true;
+        fs_usage_last_drive = '\0';
 
         screen = lv_obj_create(NULL);
         lv_obj_set_size(screen, 240, 320);
@@ -558,13 +578,7 @@ private:
         }
 
         if (fm->on_open_cb) {
-            static const size_t LARGE_FILE_WARN_BYTES = 128 * 1024;
-            size_t fsz = fm->getFileSize(meta->vpath);
-            if (fsz >= LARGE_FILE_WARN_BYTES) {
-                fm->openLargeFileWarnDialog(meta->vpath, fsz);
-            } else {
-                fm->on_open_cb(meta->vpath.c_str());
-            }
+            fm->on_open_cb(meta->vpath.c_str());
         }
     }
 
@@ -1240,13 +1254,38 @@ private:
         lv_obj_set_style_shadow_width(btn, 0, 0);
     }
 
+    void invalidateFsUsageCache(char drive = '\0') {
+        if (drive != '\0' && drive != active_drive) return;
+        fs_usage_force_refresh = true;
+    }
+
     void updateFsUsageUi() {
         if (!fs_bar || !fs_label) return;
         bool fs_busy = copy_in_progress || delete_in_progress || fs_job_in_progress || scan_in_progress;
 
+        if (fs_usage_last_drive != active_drive) {
+            fs_usage_last_valid = false;
+            fs_usage_force_refresh = true;
+            fs_usage_last_drive = active_drive;
+        }
+
+        uint32_t refresh_ms = FS_USAGE_REFRESH_MS_LFS;
+        if (active_drive == 'D' && sd_ready && StorageHelper::getInstance()->isInitialized()) {
+            refresh_ms = StorageHelper::getInstance()->isFat32() ? FS_USAGE_REFRESH_MS_SD_FAT32 : FS_USAGE_REFRESH_MS_SD_EXFAT;
+        }
+
+        uint32_t now = millis();
+        if (!fs_usage_force_refresh && fs_usage_last_valid && (now - fs_usage_last_ms) < refresh_ms) {
+            lv_bar_set_value(fs_bar, fs_usage_last_pct, LV_ANIM_OFF);
+            char quick[16];
+            lv_snprintf(quick, sizeof(quick), "%d\n%%", fs_usage_last_pct);
+            lv_label_set_text(fs_label, quick);
+            return;
+        }
+
         // SD usage probing can be expensive (freeClusterCount scan). Throttle it.
         if (active_drive == 'D') {
-            if (fs_busy) {
+            if (fs_busy && !fs_usage_force_refresh) {
                 if (fs_usage_last_valid) {
                     lv_bar_set_value(fs_bar, fs_usage_last_pct, LV_ANIM_OFF);
                     char quick[16];
@@ -1255,19 +1294,11 @@ private:
                 }
                 return;
             }
-            uint32_t now = millis();
-            if (fs_usage_last_valid && (now - fs_usage_last_ms) < 1500) {
-                lv_bar_set_value(fs_bar, fs_usage_last_pct, LV_ANIM_OFF);
-                char quick[16];
-                lv_snprintf(quick, sizeof(quick), "%d\n%%", fs_usage_last_pct);
-                lv_label_set_text(fs_label, quick);
-                return;
-            }
-            fs_usage_last_ms = now;
         }
 
         uint64_t total = 0;
         uint64_t used = 0;
+        uint32_t calc_t0 = millis();
 
         if (active_drive == 'L') {
             total = (uint64_t)LittleFS.totalBytes();
@@ -1276,6 +1307,7 @@ private:
             total = StorageHelper::getInstance()->totalBytes();
             used = StorageHelper::getInstance()->usedBytes();
         }
+        LV_UNUSED(calc_t0);
 
         int pct = 0;
         if (total > 0) pct = (int)((used * 100) / total);
@@ -1284,6 +1316,8 @@ private:
         lv_bar_set_value(fs_bar, pct, LV_ANIM_OFF);
         fs_usage_last_pct = pct;
         fs_usage_last_valid = (total > 0);
+        fs_usage_last_ms = now;
+        fs_usage_force_refresh = false;
 
         char buf[48];
         if (total == 0) lv_snprintf(buf, sizeof(buf), "--");
@@ -1745,32 +1779,30 @@ private:
         closeMenuPanel();
         closeDialog();
 
-        bool is_dir = false;
-        uint32_t file_count = 0;
-        uint64_t file_size = 0;
-        if (!getEntryInfo(vpath, is_dir, file_count, file_size)) return;
+        EntryInfoData data{};
+        if (!getEntryInfo(vpath, data)) return;
 
-        dialog_box = makeDialogBox(198);
+        dialog_box = makeDialogBox(206);
         addDialogTitle(dialog_box, "Info");
 
-        char info[256];
-        if (is_dir) {
-            lv_snprintf(
-                info, sizeof(info),
-                "Name: %s\nFiles: %u",
-                baseName(innerPath(vpath)).c_str(),
-                (unsigned)file_count
-            );
+        String info;
+        info += "Name: ";
+        info += baseName(innerPath(vpath));
+        info += "\nType: ";
+        info += data.is_dir ? "Dir" : "File";
+        if (data.is_dir) {
+            info += "\nItems: ";
+            info += String((unsigned long)data.file_count);
         } else {
-            lv_snprintf(
-                info, sizeof(info),
-                "Name: %s\nSize: %s",
-                baseName(innerPath(vpath)).c_str(),
-                formatBytesHuman(file_size).c_str()
-            );
+            info += "\nSize: ";
+            info += formatBytesHuman(data.file_size);
         }
+        info += "\nM: ";
+        info += formatFatDateTimeCompact(data.has_modified_time, data.modified_date, data.modified_time);
+        info += "\nC: ";
+        info += formatFatDateTimeCompact(data.has_created_time, data.created_date, data.created_time);
 
-        addDialogInfoText(dialog_box, info, FontManager::textFont());
+        addDialogInfoText(dialog_box, info.c_str(), FontManager::textFont());
         addDialogOkRow(dialog_box);
     }
 
@@ -1860,6 +1892,7 @@ private:
                 if (deletePath(fs_worker_delete_paths[i], force_delete)) removed++;
                 delay(0);
             }
+            if (removed > 0) invalidateFsUsageCache(active_drive);
             selected_vpath = "";
             remove_mode = false;
             closeMenuPanel();
@@ -1889,10 +1922,12 @@ private:
     void pasteCopied() {
         if (copied_vpath.length() == 0 || copy_in_progress) return;
         suspendListForDialog();
+        char src_drive = driveOf(copied_vpath);
         String src_name = baseName(innerPath(copied_vpath));
         size_t src_size = getFileSize(copied_vpath);
         String base_dest_v = String(active_drive) + ":" + joinPath(current_path, src_name);
         String dest_v = nextAvailableVPath(base_dest_v);
+        char dst_drive = driveOf(dest_v);
         bool involve_sd = usesSdPath(copied_vpath) || usesSdPath(dest_v);
 
         if (isDirectoryPath(copied_vpath)) {
@@ -1922,6 +1957,8 @@ private:
                 }
                 copy_in_progress = false;
                 copy_cancel_requested = false;
+                invalidateFsUsageCache(src_drive);
+                invalidateFsUsageCache(dst_drive);
                 updateMenuActionStates();
                 hideCopyProgressOnPaste();
                 closeMenuPanel();
@@ -1991,6 +2028,7 @@ private:
         if (ok) {
             if (selected_vpath == moved_vpath) selected_vpath = dst_v;
             moved_vpath = "";
+            invalidateFsUsageCache(dst_drive);
             closeMenuPanel();
             refreshUi();
         } else {
@@ -2278,6 +2316,8 @@ private:
             (fs_worker_job == FS_WORK_COPY_DIR || fs_worker_job == FS_WORK_COPY_FILE)) {
             deletePath(fs_worker_dst_vpath, true);
         }
+        invalidateFsUsageCache(copy_src_drive);
+        invalidateFsUsageCache(copy_dst_drive);
         cancelCopyJob(!success);
         fs_worker_src_vpath = "";
         fs_worker_dst_vpath = "";
@@ -2303,6 +2343,7 @@ private:
         fs_worker_done = false;
         fs_worker_ok = false;
         fs_worker_job = FS_WORK_NONE;
+        invalidateFsUsageCache(active_drive);
         updateMenuActionStates();
         refreshUi();
     }
@@ -2857,6 +2898,9 @@ private:
     }
 
     void finishFsJob() {
+        FsWorkerJobType finished_job = fs_worker_job;
+        String done_a1 = fs_worker_arg1;
+        String done_a2 = fs_worker_arg2;
         fs_job_in_progress = false;
         if (fs_job_timer) {
             lv_timer_del(fs_job_timer);
@@ -2868,6 +2912,12 @@ private:
         fs_worker_done = false;
         fs_worker_ok = false;
         list_suspended_for_dialog = false;
+        if (finished_job == FS_WORK_CREATE_FILE || finished_job == FS_WORK_CREATE_DIR) {
+            invalidateFsUsageCache(driveOf(done_a1));
+        } else if (finished_job == FS_WORK_RENAME) {
+            invalidateFsUsageCache(driveOf(done_a1));
+            invalidateFsUsageCache(driveOf(done_a2));
+        }
         updateMenuActionStates();
         refreshUi();
     }
@@ -2907,6 +2957,13 @@ private:
             if (job == FS_WORK_CREATE_FILE) ok = writeTextFile(a1, "");
             else if (job == FS_WORK_CREATE_DIR) ok = makeDir(a1);
             else if (job == FS_WORK_RENAME) ok = renamePath(a1, a2);
+            if (ok) {
+                if (job == FS_WORK_CREATE_FILE || job == FS_WORK_CREATE_DIR) invalidateFsUsageCache(driveOf(a1));
+                else if (job == FS_WORK_RENAME) {
+                    invalidateFsUsageCache(driveOf(a1));
+                    invalidateFsUsageCache(driveOf(a2));
+                }
+            }
             if (refresh_after) refreshUi();
             return ok;
         }
@@ -2939,19 +2996,29 @@ private:
         return true;
     }
 
-    bool getEntryInfo(const String& vpath, bool& is_dir, uint32_t& file_count, uint64_t& file_size) {
-        is_dir = false;
-        file_count = 0;
-        file_size = 0;
+    String formatFatDateTimeCompact(bool has_time, uint16_t date, uint16_t time) const {
+        if (!has_time || date == 0) return "--";
+        int year = ((date >> 9) & 0x7F) + 1980;
+        int month = (date >> 5) & 0x0F;
+        int day = date & 0x1F;
+        int hour = (time >> 11) & 0x1F;
+        int minute = (time >> 5) & 0x3F;
+        char buf[24];
+        lv_snprintf(buf, sizeof(buf), "%02d-%02d-%02d %02d:%02d", year % 100, month, day, hour, minute);
+        return String(buf);
+    }
+
+    bool getEntryInfo(const String& vpath, EntryInfoData& out) {
+        out = EntryInfoData{};
         char d = driveOf(vpath);
         String p = innerPath(vpath);
 
         if (d == 'L') {
             File node = LittleFS.open(p.c_str(), "r");
             if (!node) return false;
-            is_dir = node.isDirectory();
-            if (!is_dir) {
-                file_size = (uint64_t)node.size();
+            out.is_dir = node.isDirectory();
+            if (!out.is_dir) {
+                out.file_size = (uint64_t)node.size();
                 node.close();
                 return true;
             }
@@ -2959,7 +3026,7 @@ private:
             while (true) {
                 File e = node.openNextFile();
                 if (!e) break;
-                if (!e.isDirectory()) file_count++;
+                if (!e.isDirectory()) out.file_count++;
                 e.close();
                 if ((++iter & 0x0F) == 0) delay(0);
             }
@@ -2970,16 +3037,24 @@ private:
         if (d == 'D' && sd_ready && StorageHelper::getInstance()->isInitialized()) {
             FsFile node = StorageHelper::getInstance()->getFs().open(p.c_str(), O_RDONLY);
             if (!node) return false;
-            is_dir = node.isDir();
-            if (!is_dir) {
-                file_size = (uint64_t)node.fileSize();
+            out.is_dir = node.isDir();
+            uint16_t cdate = 0, ctime = 0, mdate = 0, mtime = 0;
+            out.has_created_time = node.getCreateDateTime(&cdate, &ctime);
+            out.has_modified_time = node.getModifyDateTime(&mdate, &mtime);
+            out.created_date = cdate;
+            out.created_time = ctime;
+            out.modified_date = mdate;
+            out.modified_time = mtime;
+
+            if (!out.is_dir) {
+                out.file_size = (uint64_t)node.fileSize();
                 node.close();
                 return true;
             }
             uint32_t iter = 0;
             FsFile e;
             while (e.openNext(&node, O_RDONLY)) {
-                if (!e.isDir()) file_count++;
+                if (!e.isDir()) out.file_count++;
                 e.close();
                 if ((++iter & 0x0F) == 0) delay(0);
             }

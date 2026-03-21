@@ -223,6 +223,16 @@ public:
         return "Unknown";
     }
 
+    bool isFat32() {
+        if (!initialized) return false;
+        return sd.fatType() == FAT_TYPE_FAT32;
+    }
+
+    bool isExFat() {
+        if (!initialized) return false;
+        return sd.fatType() == FAT_TYPE_EXFAT;
+    }
+
 private:
     String normalizePath(const char* p) {
         if (!p || p[0] == '\0') return "/";

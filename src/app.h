@@ -10,6 +10,7 @@
 #include "utils/format.h"
 #include "utils/storage.h"
 #include "utils/share.h"
+#include "utils/progress.h"
 
 // For readability in AppManager context
 using SDHelper = StorageHelper;
@@ -32,6 +33,7 @@ private:
     MenuManager menu_manager;
     SDHelper* sd_helper;
     ApShareService ap_share;
+    ReadProgressStore progress_store;
     String current_filename;
     std::vector<String> image_gallery;
     std::vector<size_t> read_chunk_offsets;
@@ -53,6 +55,7 @@ public:
         bool sd_ok = sd_helper && sd_helper->begin();
         if (!sd_ok) Serial.println("[SD] unavailable, D: disabled");
         ap_share.init(sd_helper);
+        progress_store.begin();
 
         // Create UI components
         file_manager.create(
@@ -103,12 +106,16 @@ private:
             current_mode = MODE_EDITOR;
         }
 
+        ReadProgressRecord saved_progress{};
+        bool has_saved_progress = progress_store.load(filename, saved_progress);
+
         clearReadChunkState();
         current_filename = filename;
         editor.setTitle(filename);
         editor.setText("");
         editor.setReadChunkMode(false);
         editor.setReadChunkNavigationState(false, false);
+        editor.setReadChunkDisplayInfo(0, 0, 0, 0);
         uint64_t file_size = 0;
         bool should_use_chunk_mode = getVirtualFileSize(filename, file_size) && file_size > READ_CHUNK_SIZE;
         if (should_use_chunk_mode) {
@@ -124,10 +131,37 @@ private:
 
         if (!editor.isReadChunkMode()) {
             String content;
-            if (readVirtualFile(filename, content)) editor.setText(content);
+            if (readVirtualFile(filename, content)) {
+                editor.setText(content);
+                editor.setReadChunkDisplayInfo(0, 0, content.length(), (uint64_t)content.length());
+                if (has_saved_progress && saved_progress.mode == 0) {
+                    editor.setCursorPos(saved_progress.cursor_pos);
+                }
+            }
         }
 
         editor.show(LV_SCR_LOAD_ANIM_FADE_IN);
+
+        bool has_resume_target = false;
+        if (has_saved_progress) {
+            if (saved_progress.mode == 1) {
+                has_resume_target = editor.isReadChunkMode() && saved_progress.chunk_index > 0;
+            } else {
+                has_resume_target = (!editor.isReadChunkMode() && saved_progress.cursor_pos > 0);
+            }
+        }
+        if (has_resume_target) {
+            String detail;
+            if (saved_progress.mode == 1) {
+                detail = String("Last position: chunk ") + String((unsigned long)(saved_progress.chunk_index + 1));
+            } else {
+                detail = String("Last position: char ") + String((unsigned long)saved_progress.cursor_pos);
+            }
+            editor.showResumeProgressPrompt(detail, [this, saved_progress](bool use_saved) {
+                if (!use_saved) return;
+                this->applySavedProgress(saved_progress);
+            });
+        }
     }
 
 public:
@@ -203,6 +237,7 @@ public:
             String from_h = had_old ? FormatUtil::formatBytesHuman(old_size) : "0 B";
             String to_h = FormatUtil::formatBytesHuman(new_size);
             editor.showSaveSuccessPopup(fileNameOf(current_filename), from_h, to_h);
+            saveReadingProgress();
             Serial.println("File saved: " + current_filename);
         } else {
             Serial.println("Save failed!");
@@ -262,7 +297,7 @@ private:
         if (!editor.isReadChunkMode()) return;
         if (read_chunk_index == 0) return;
         read_chunk_index--;
-        loadReadChunkAtIndex(true);
+        if (loadReadChunkAtIndex(true)) saveReadingProgress();
     }
 
     void showNextReadChunk() {
@@ -277,7 +312,7 @@ private:
         size_t next_offset = (size_t)next_offset64;
         if (read_chunk_index + 1 < read_chunk_offsets.size()) {
             read_chunk_index++;
-            loadReadChunkAtIndex(false);
+            if (loadReadChunkAtIndex(false)) saveReadingProgress();
             return;
         }
         read_chunk_offsets.push_back(next_offset);
@@ -285,7 +320,73 @@ private:
         if (!loadReadChunkAtIndex(false)) {
             read_chunk_offsets.pop_back();
             read_chunk_index = read_chunk_offsets.empty() ? 0 : (read_chunk_offsets.size() - 1);
+        } else {
+            saveReadingProgress();
         }
+    }
+
+    void saveReadingProgress() {
+        if (current_filename.length() == 0) return;
+        ReadProgressRecord rec{};
+        if (editor.isReadChunkMode()) {
+            rec.mode = 1;
+            rec.chunk_index = (uint32_t)read_chunk_index;
+            rec.cursor_pos = 0;
+            rec.file_size = read_chunk_file_size;
+        } else {
+            rec.mode = 0;
+            rec.chunk_index = 0;
+            rec.cursor_pos = editor.getCursorPos();
+            uint64_t fsz = 0;
+            if (!getVirtualFileSize(current_filename, fsz)) {
+                String txt = editor.getText();
+                fsz = (uint64_t)txt.length();
+            }
+            rec.file_size = fsz;
+        }
+        progress_store.save(current_filename, rec);
+    }
+
+    bool advanceReadChunkNoPersist() {
+        if (!editor.isReadChunkMode()) return false;
+        if (read_chunk_offsets.empty()) return false;
+        if (read_chunk_index >= read_chunk_offsets.size()) return false;
+        uint64_t current_offset64 = (uint64_t)read_chunk_offsets[read_chunk_index];
+        if (read_chunk_bytes == 0 || current_offset64 >= read_chunk_file_size) return false;
+        if ((uint64_t)read_chunk_bytes > (read_chunk_file_size - current_offset64)) return false;
+        uint64_t next_offset64 = current_offset64 + (uint64_t)read_chunk_bytes;
+        if (next_offset64 > (uint64_t)SIZE_MAX || next_offset64 >= read_chunk_file_size) return false;
+        size_t next_offset = (size_t)next_offset64;
+
+        if (read_chunk_index + 1 < read_chunk_offsets.size()) {
+            read_chunk_index++;
+            return loadReadChunkAtIndex(false);
+        }
+
+        read_chunk_offsets.push_back(next_offset);
+        read_chunk_index = read_chunk_offsets.size() - 1;
+        if (!loadReadChunkAtIndex(false)) {
+            read_chunk_offsets.pop_back();
+            read_chunk_index = read_chunk_offsets.empty() ? 0 : (read_chunk_offsets.size() - 1);
+            return false;
+        }
+        return true;
+    }
+
+    void applySavedProgress(const ReadProgressRecord& saved) {
+        if (saved.mode == 1) {
+            if (!editor.isReadChunkMode()) return;
+            size_t target = (size_t)saved.chunk_index;
+            size_t guard = 0;
+            while (read_chunk_index < target && guard < 4096) {
+                if (!advanceReadChunkNoPersist()) break;
+                guard++;
+            }
+            return;
+        }
+
+        if (editor.isReadChunkMode()) return;
+        editor.setCursorPos(saved.cursor_pos);
     }
 
     bool loadReadChunkAtIndex(bool anchor_end) {
@@ -301,9 +402,18 @@ private:
         read_chunk_bytes = bytes_read;
         bool has_prev = read_chunk_index > 0;
         bool has_next = ((uint64_t)offset + (uint64_t)read_chunk_bytes) < read_chunk_file_size;
+        size_t total_chunks = 1;
+        if (read_chunk_file_size > 0) {
+            uint64_t chunks64 = (read_chunk_file_size + (uint64_t)READ_CHUNK_SIZE - 1ULL) / (uint64_t)READ_CHUNK_SIZE;
+            const uint64_t max_size_t_u64 = (uint64_t)((size_t)-1);
+            if (chunks64 > max_size_t_u64) chunks64 = max_size_t_u64;
+            total_chunks = (size_t)chunks64;
+            if (total_chunks == 0) total_chunks = 1;
+        }
 
         editor.setTitle(current_filename);
         editor.setReadChunkMode(true);
+        editor.setReadChunkDisplayInfo(read_chunk_index, total_chunks, read_chunk_bytes, read_chunk_file_size);
         editor.setReadChunkText(content, has_prev, has_next, anchor_end);
         return true;
     }
